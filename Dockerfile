@@ -1,10 +1,12 @@
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     nginx \
     fcgiwrap \
-    gettext
+    gettext-base \
+    ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /repos /run/nginx /var/run
 
@@ -15,6 +17,6 @@ RUN chmod +x /start.sh
 EXPOSE 80
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD wget -q --spider http://localhost/health || exit 1
+    CMD curl -sf http://localhost/health || exit 1
 
 CMD ["/start.sh"]

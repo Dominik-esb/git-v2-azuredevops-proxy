@@ -1,4 +1,4 @@
-user nginx;
+user www-data;
 worker_processes auto;
 pid /run/nginx/nginx.pid;
 error_log /dev/stderr warn;
