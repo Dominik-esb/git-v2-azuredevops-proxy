@@ -1,0 +1,21 @@
+services:
+  git-proxy:
+    build: .
+    container_name: git-v2-proxy
+    ports:
+      - "7080:80"
+    environment:
+      # Azure DevOps repo URL (no trailing slash)
+      AZURE_DEVOPS_URL: "https://dev.azure.com/YOUR_ORG/YOUR_PROJECT/_git/YOUR_REPO"
+      # PAT needs: Code → Read & Write
+      AZURE_PAT: "YOUR_PAT_HERE"
+      # Local name — clients use http://localhost:7080/<REPO_NAME>
+      REPO_NAME: "myrepo.git"
+      # Seconds between background fetches from Azure DevOps
+      SYNC_INTERVAL: "60"
+    volumes:
+      - git-repos:/repos
+    restart: unless-stopped
+
+volumes:
+  git-repos:
