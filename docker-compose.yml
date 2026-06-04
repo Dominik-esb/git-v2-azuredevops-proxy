@@ -4,11 +4,15 @@ services:
     container_name: git-v2-proxy
     ports:
       - "7080:80"
+      - "7443:443"
     environment:
       SYNC_INTERVAL: "${SYNC_INTERVAL:-60}"
     volumes:
       - git-repos:/repos
       - ./repos.conf:/etc/git-proxy/repos.conf:ro
+      # Optional: mount your own cert to skip the auto-generated self-signed one
+      # - ./tls/tls.crt:/etc/git-proxy/tls/tls.crt:ro
+      # - ./tls/tls.key:/etc/git-proxy/tls/tls.key:ro
     restart: unless-stopped
 
 volumes:

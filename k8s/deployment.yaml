@@ -23,6 +23,8 @@ spec:
           ports:
             - containerPort: 80
               name: http
+            - containerPort: 443
+              name: https
           env:
             - name: SYNC_INTERVAL
               value: "60"
@@ -32,6 +34,10 @@ spec:
             - name: repos-config
               mountPath: /etc/git-proxy
               readOnly: true
+            # Optional: uncomment to supply your own TLS cert (apply tls-secret.yaml)
+            # - name: tls
+            #   mountPath: /etc/git-proxy/tls
+            #   readOnly: true
           livenessProbe:
             httpGet:
               path: /health
@@ -60,3 +66,6 @@ spec:
         - name: repos-config
           secret:
             secretName: git-proxy-repos
+        # - name: tls
+        #   secret:
+        #     secretName: git-proxy-tls

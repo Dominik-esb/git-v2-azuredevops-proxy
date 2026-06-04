@@ -24,6 +24,23 @@ envsubst '${GIT_HTTP_BACKEND}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/nginx.conf
 
+# ── TLS certificate ───────────────────────────────────────────────────────────
+TLS_DIR="/etc/git-proxy/tls"
+mkdir -p "$TLS_DIR"
+if [ ! -f "$TLS_DIR/tls.crt" ] || [ ! -f "$TLS_DIR/tls.key" ]; then
+    echo "[init] No TLS cert found — generating self-signed certificate..."
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout "$TLS_DIR/tls.key" \
+        -out    "$TLS_DIR/tls.crt" \
+        -subj   "/CN=git-proxy/O=git-proxy" \
+        -addext "subjectAltName=DNS:git-proxy,DNS:localhost,IP:127.0.0.1" \
+        2>/dev/null
+    echo "[init] Self-signed cert generated (valid 10 years)"
+    echo "[init] To use a real cert, mount tls.crt + tls.key to $TLS_DIR"
+else
+    echo "[init] TLS cert found at $TLS_DIR"
+fi
+
 # ── Git global config ─────────────────────────────────────────────────────────
 git config --global protocol.version 2
 git config --global user.email "proxy@localhost"

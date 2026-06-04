@@ -75,6 +75,44 @@ GIT_TRACE_PACKET=1 git -C <repo> fetch 2>&1 | head -5
 # Look for: packet: ... version 2
 ```
 
+## HTTPS
+
+HTTPS is enabled by default on port `7443`. On first start the container **auto-generates a self-signed certificate** (valid 10 years) — no config needed.
+
+```bash
+git clone https://localhost:7443/<repo-name>.git
+# self-signed: add -c http.sslVerify=false if your client rejects it
+```
+
+### Bring your own certificate
+
+Mount `tls.crt` and `tls.key` to override the self-signed cert:
+
+```yaml
+# docker-compose.yml — uncomment the tls lines
+volumes:
+  - ./tls/tls.crt:/etc/git-proxy/tls/tls.crt:ro
+  - ./tls/tls.key:/etc/git-proxy/tls/tls.key:ro
+```
+
+### Grafana provisioning
+
+```yaml
+# grafana/provisioning/dashboards/git.yaml
+apiVersion: 1
+providers:
+  - name: dashboards
+    type: git
+    options:
+      url: https://git-proxy.git-proxy.svc.cluster.local/<repo-name>.git
+      ref: main
+      rootPath: dashboards/
+      # For self-signed cert in-cluster:
+      tlsSkipVerify: true
+```
+
+For a trusted cert in Kubernetes, apply `k8s/tls-secret.yaml` and uncomment the TLS volume in `k8s/deployment.yaml`.
+
 ## Logs
 
 ```bash

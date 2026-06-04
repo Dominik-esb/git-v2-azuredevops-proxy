@@ -12,39 +12,74 @@ http {
     default_type  application/octet-stream;
     access_log    /dev/stdout;
 
-    # Needed for large pack files on push
     client_max_body_size 0;
 
+    # Shared git location config
+    # (used via include in both server blocks)
+    fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
+    fastcgi_param GIT_HTTP_EXPORT_ALL "";
+    fastcgi_param GIT_PROJECT_ROOT   /repos;
+    fastcgi_param GIT_HTTP_RECEIVE_PACK true;
+    fastcgi_read_timeout 600;
+    fastcgi_send_timeout 600;
+
+    # ── HTTP ──────────────────────────────────────────────────────────────────
     server {
         listen 80;
         server_name _;
 
-        # Health check endpoint
         location = /health {
             return 200 "ok\n";
             add_header Content-Type text/plain;
         }
 
-        # Git Smart HTTP — handles clone, fetch, push
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
-
-            # Path resolved at container startup by start.sh via envsubst
             include fastcgi_params;
             fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
             fastcgi_param GIT_HTTP_EXPORT_ALL "";
             fastcgi_param GIT_PROJECT_ROOT   /repos;
             fastcgi_param PATH_INFO          $1/$2;
             fastcgi_param GIT_HTTP_RECEIVE_PACK true;
-            # Passes Git-Protocol: version=2 header → enables v2 for clients
             fastcgi_param GIT_PROTOCOL       $http_git_protocol;
-
             fastcgi_read_timeout 600;
             fastcgi_send_timeout 600;
         }
 
-        location / {
-            return 404 "not found\n";
+        location / { return 404 "not found\n"; }
+    }
+
+    # ── HTTPS ─────────────────────────────────────────────────────────────────
+    server {
+        listen 443 ssl;
+        server_name _;
+
+        ssl_certificate     /etc/git-proxy/tls/tls.crt;
+        ssl_certificate_key /etc/git-proxy/tls/tls.key;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+        ssl_session_cache   shared:SSL:10m;
+        ssl_session_timeout 10m;
+
+        location = /health {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
         }
+
+        location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
+            fastcgi_pass unix:/var/run/fcgiwrap.sock;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
+            fastcgi_param GIT_HTTP_EXPORT_ALL "";
+            fastcgi_param GIT_PROJECT_ROOT   /repos;
+            fastcgi_param PATH_INFO          $1/$2;
+            fastcgi_param GIT_HTTP_RECEIVE_PACK true;
+            fastcgi_param GIT_PROTOCOL       $http_git_protocol;
+            fastcgi_param HTTPS              on;
+            fastcgi_read_timeout 600;
+            fastcgi_send_timeout 600;
+        }
+
+        location / { return 404 "not found\n"; }
     }
 }
