@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-proxy
+  namespace: git-proxy
+  labels:
+    app: git-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git-proxy
+  template:
+    metadata:
+      labels:
+        app: git-proxy
+    spec:
+      containers:
+        - name: git-proxy
+          # Replace with your Docker Hub image after the CI pipeline pushes it
+          image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          env:
+            - name: SYNC_INTERVAL
+              value: "60"
+          volumeMounts:
+            - name: repos-data
+              mountPath: /repos
+            - name: repos-config
+              mountPath: /etc/git-proxy
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: repos-data
+          persistentVolumeClaim:
+            claimName: git-proxy-data
+        - name: repos-config
+          secret:
+            secretName: git-proxy-repos

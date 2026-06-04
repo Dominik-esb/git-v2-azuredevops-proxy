@@ -1,0 +1,11 @@
+# repos.conf — one Azure DevOps repo per line
+#
+# Format:  <AZURE_DEVOPS_URL>  <PAT>
+#
+# The local URL is auto-derived from the DevOps repo name:
+#   https://dev.azure.com/org/project/_git/myrepo  ->  http://localhost:7080/myrepo.git
+#
+# PAT needs: Code → Read & Write
+#
+# https://dev.azure.com/myorg/myproject/_git/repo1  pat1here
+# https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
