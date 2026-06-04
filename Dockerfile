@@ -8,7 +8,7 @@ RUN apk add --no-cache \
 
 RUN mkdir -p /repos /run/nginx /var/run
 
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 

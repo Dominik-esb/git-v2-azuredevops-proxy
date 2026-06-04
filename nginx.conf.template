@@ -29,22 +29,18 @@ http {
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
 
-            fastcgi_param SCRIPT_FILENAME    /usr/lib/git-core/git-http-backend;
+            # Path resolved at container startup by start.sh via envsubst
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
             fastcgi_param GIT_HTTP_EXPORT_ALL "";
             fastcgi_param GIT_PROJECT_ROOT   /repos;
             fastcgi_param PATH_INFO          $1/$2;
-
-            # Enable push (receive-pack) via HTTP
             fastcgi_param GIT_HTTP_RECEIVE_PACK true;
-
-            # Forward the Git-Protocol header so clients get v2 responses
-            # nginx lowercases headers and prefixes with http_
+            # Passes Git-Protocol: version=2 header → enables v2 for clients
             fastcgi_param GIT_PROTOCOL       $http_git_protocol;
 
             fastcgi_read_timeout 600;
             fastcgi_send_timeout 600;
-
-            include fastcgi_params;
         }
 
         location / {

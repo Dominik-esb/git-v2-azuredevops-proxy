@@ -89,10 +89,24 @@ chmod +x hooks/post-receive
 
 echo "[init] post-receive hook installed"
 
+# ── Locate git-http-backend and render nginx config ──────────────────────────
+GIT_HTTP_BACKEND=$(command -v git-http-backend 2>/dev/null || \
+                   find /usr -name git-http-backend -type f 2>/dev/null | head -1)
+if [ -z "$GIT_HTTP_BACKEND" ]; then
+    echo "[init] ERROR: git-http-backend not found in PATH or /usr" >&2
+    exit 1
+fi
+echo "[init] git-http-backend: $GIT_HTTP_BACKEND"
+export GIT_HTTP_BACKEND
+
+# envsubst only replaces ${GIT_HTTP_BACKEND}; nginx vars ($1, $uri, etc.) are left alone
+envsubst '${GIT_HTTP_BACKEND}' \
+    < /etc/nginx/nginx.conf.template \
+    > /etc/nginx/nginx.conf
+
 # ── Start fcgiwrap ────────────────────────────────────────────────────────────
 echo "[init] Starting fcgiwrap..."
 fcgiwrap -s unix:/var/run/fcgiwrap.sock &
-FCGI_PID=$!
 
 # Wait for socket to appear
 TRIES=0
