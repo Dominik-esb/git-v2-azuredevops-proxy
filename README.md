@@ -216,19 +216,6 @@ kubectl apply -f k8s/service.yaml
 
 The service is `ClusterIP` by default. Add an Ingress or change to `LoadBalancer` to expose it outside the cluster.
 
-## Docker Hub (CI)
-
-The GitHub Actions workflow builds and pushes to Docker Hub on every push to `main`.
-
-Add these secrets to your GitHub repo (`Settings → Secrets → Actions`):
-
-| Secret | Description |
-|---|---|
-| `DOCKERHUB_USERNAME` | Your Docker Hub username |
-| `DOCKERHUB_TOKEN` | Docker Hub access token (not your password) |
-
-Images are tagged `latest`, short SHA, and semver tags on releases.
-
 ## License
 
 MIT — see [LICENSE](LICENSE)
