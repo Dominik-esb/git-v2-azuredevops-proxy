@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: git-proxy
-  namespace: git-proxy
+  namespace: grafana-horizon
   labels:
     app: git-proxy
 spec:
@@ -23,7 +23,7 @@ spec:
           ports:
             - containerPort: 80
               name: http
-            - containerPort: 443
+            - containerPort: 8443
               name: https
           env:
             - name: SYNC_INTERVAL

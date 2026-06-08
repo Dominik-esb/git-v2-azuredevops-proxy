@@ -5,10 +5,16 @@ set -e
 REPOS_CONF="${REPOS_CONF:-/etc/git-proxy/repos.conf}"
 SYNC_INTERVAL="${SYNC_INTERVAL:-60}"
 
-if [ ! -f "$REPOS_CONF" ]; then
-    echo "[init] ERROR: repos config not found at $REPOS_CONF" >&2
-    echo "[init] Mount a repos.conf — see repos.conf.example" >&2
-    exit 1
+if [ ! -s "$REPOS_CONF" ]; then
+    if [ -n "$AZURE_DEVOPS_URL" ] && [ -n "$AZURE_PAT" ]; then
+        echo "[init] No repos.conf found — building from AZURE_DEVOPS_URL + AZURE_PAT env vars"
+        mkdir -p "$(dirname "$REPOS_CONF")"
+        printf '%s  %s\n' "$AZURE_DEVOPS_URL" "$AZURE_PAT" > "$REPOS_CONF"
+    else
+        echo "[init] ERROR: repos config not found at $REPOS_CONF" >&2
+        echo "[init] Mount a repos.conf or set AZURE_DEVOPS_URL + AZURE_PAT env vars" >&2
+        exit 1
+    fi
 fi
 
 # ── Locate git-http-backend and render nginx config ───────────────────────────
@@ -92,10 +98,31 @@ done
 exit "$STATUS"
 HOOK
     chmod +x hooks/post-receive
+
+    # ── Per-repo access token (persists in the git-repos volume) ──────────────
+    TOKEN_FILE="${repo_path}/proxy-token"
+    if [ ! -f "$TOKEN_FILE" ]; then
+        TOKEN=$(openssl rand -hex 20)
+        printf '%s' "$TOKEN" > "$TOKEN_FILE"
+        chmod 600 "$TOKEN_FILE"
+        echo "[init]   token generated"
+    else
+        TOKEN=$(cat "$TOKEN_FILE")
+        echo "[init]   token loaded"
+    fi
+    HASHED=$(openssl passwd -apr1 "$TOKEN")
+    printf '%s:%s\n' "$repo_name" "$HASHED" >> /repos/.htpasswd.tmp
+    printf '  %-35s  %-30s  %s\n' "$repo_name" "$repo_name" "$TOKEN" >> /tmp/creds.txt
+
     echo "[init]   ready"
 }
 
 # ── Process repos.conf ────────────────────────────────────────────────────────
+# Reset temp files for this run
+: > /repos/.htpasswd.tmp
+printf '  %-35s  %-30s  %s\n' "REPO" "USERNAME" "ACCESS TOKEN" > /tmp/creds.txt
+printf '  %-35s  %-30s  %s\n' "----" "--------" "------------" >> /tmp/creds.txt
+
 REPO_COUNT=0
 while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in '#'*|'') continue ;; esac
@@ -110,6 +137,16 @@ if [ "$REPO_COUNT" -eq 0 ]; then
     echo "[init] ERROR: no valid repos found in $REPOS_CONF" >&2
     exit 1
 fi
+
+mv /repos/.htpasswd.tmp /repos/.htpasswd
+chmod 644 /repos/.htpasswd
+
+echo ""
+echo "[credentials] Grafana Git provisioning credentials:"
+echo "[credentials] Repository URL pattern: https://<host>/<repo-name>.git"
+echo ""
+cat /tmp/creds.txt
+echo ""
 
 # ── Start fcgiwrap ────────────────────────────────────────────────────────────
 echo "[init] Starting fcgiwrap..."

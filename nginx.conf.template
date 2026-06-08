@@ -1,4 +1,3 @@
-user www-data;
 worker_processes auto;
 pid /run/nginx/nginx.pid;
 error_log /dev/stderr warn;
@@ -34,6 +33,9 @@ http {
         }
 
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
+            auth_basic "Git Proxy";
+            auth_basic_user_file /repos/.htpasswd;
+
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
             include fastcgi_params;
             fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
@@ -51,7 +53,7 @@ http {
 
     # ── HTTPS ─────────────────────────────────────────────────────────────────
     server {
-        listen 443 ssl;
+        listen 8443 ssl;
         server_name _;
 
         ssl_certificate     /etc/git-proxy/tls/tls.crt;
@@ -67,6 +69,9 @@ http {
         }
 
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
+            auth_basic "Git Proxy";
+            auth_basic_user_file /repos/.htpasswd;
+
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
             include fastcgi_params;
             fastcgi_param SCRIPT_FILENAME    ${GIT_HTTP_BACKEND};
