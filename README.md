@@ -172,6 +172,8 @@ kubectl logs -n grafana-horizon deploy/git-proxy | grep -A5 '\[credentials\]'
 
 The token is stable across restarts (stored in the git-repos volume).
 
+![Container logs showing init sequence, credentials table, and live sync output](docs/images/container-logs.png)
+
 #### 5. Configure Grafana
 
 Use the in-cluster HTTP URL — no TLS needed for cluster-internal traffic:
@@ -193,7 +195,23 @@ providers:
 
 The URL pattern is always `http://git-proxy.<namespace>.svc.cluster.local/<repo-name>.git`.
 
+In the Grafana UI (**Administration → Provisioning → Add repository**), set type **Pure Git** and fill in the URL, username, and token:
+
+![Grafana Pure Git provisioning config pointing at the proxy](docs/images/grafana-provisioning-config.png)
+
 For a trusted cert in Kubernetes, apply `k8s/tls-secret.yaml` and uncomment the TLS volume in `k8s/deployment.yaml`.
+
+#### Result
+
+Once connected, saving a dashboard in Grafana creates a commit in Azure DevOps automatically. The proxy syncs bidirectionally — changes pushed to DevOps appear in Grafana, and saves in Grafana push back through the proxy to DevOps.
+
+**Azure DevOps repo — dashboard JSON committed by Grafana:**
+
+![Azure DevOps repo showing test.json committed by Grafana](docs/images/devops-repo-dashboard.png)
+
+**Azure DevOps commit history — commit authored by Grafana:**
+
+![Azure DevOps commits list showing Save dashboard commit from Grafana](docs/images/devops-commit-by-grafana.png)
 
 ## Logs
 
