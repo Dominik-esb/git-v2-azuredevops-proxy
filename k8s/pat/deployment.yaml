@@ -2,11 +2,13 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: git-proxy
-  namespace: git-proxy
   labels:
     app: git-proxy
 spec:
+  # One replica, recreated rather than rolled: the mirror lives on a ReadWriteOnce volume.
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: git-proxy
@@ -26,15 +28,24 @@ spec:
             - containerPort: 8443
               name: https
           env:
+            # Single-repo mode. For several repos, mount a repos.conf instead (see ../README.md).
+            - name: AZURE_DEVOPS_URL
+              value: https://dev.azure.com/<org>/<project>/_git/<repo>
             - name: SYNC_INTERVAL
               value: "60"
+            # basic (default): the proxy generates a token per repo and prints it to the log.
+            # none: no auth on the git endpoints - only behind a NetworkPolicy you trust.
+            - name: GIT_PROXY_AUTH
+              value: basic
+            - name: AZURE_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: git-proxy-credentials
+                  key: AZURE_PAT
           volumeMounts:
             - name: repos-data
               mountPath: /repos
-            - name: repos-config
-              mountPath: /etc/git-proxy
-              readOnly: true
-            # Optional: uncomment to supply your own TLS cert (apply tls-secret.yaml)
+            # Optional: uncomment to supply your own TLS cert (apply ../tls-secret.yaml)
             # - name: tls
             #   mountPath: /etc/git-proxy/tls
             #   readOnly: true
@@ -52,6 +63,12 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # nginx binds :80 and drops to www-data for its workers.
+              add: ["CHOWN", "SETUID", "SETGID", "NET_BIND_SERVICE"]
           resources:
             requests:
               memory: "128Mi"
@@ -63,9 +80,6 @@ spec:
         - name: repos-data
           persistentVolumeClaim:
             claimName: git-proxy-data
-        - name: repos-config
-          secret:
-            secretName: git-proxy-repos
         # - name: tls
         #   secret:
         #     secretName: git-proxy-tls

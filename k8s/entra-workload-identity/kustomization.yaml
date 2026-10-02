@@ -1,0 +1,23 @@
+# The proxy authenticates to Azure DevOps with Microsoft Entra workload identity - no PAT, no
+# secret. It exchanges its projected service account token for an Azure DevOps access token and
+# refreshes it before it expires.
+#
+# Before applying, outside this repo:
+#   1. The cluster's OIDC issuer must be publicly reachable (on AKS: enable the OIDC issuer).
+#   2. Create an Entra app registration (or user-assigned managed identity) with a federated
+#      credential: issuer = your cluster's issuer URL,
+#      subject = system:serviceaccount:git-proxy:git-proxy, audience = api://AzureADTokenExchange
+#   3. Add that identity to your Azure DevOps organization and give it Contribute on the repo.
+#      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
+#   4. Fill in <client-id> and <tenant-id> in deployment.yaml.
+#
+#   kubectl apply -k k8s/entra-workload-identity
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - deployment.yaml
+  - serviceaccount.yaml

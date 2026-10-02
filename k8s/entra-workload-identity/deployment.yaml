@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-proxy
+  labels:
+    app: git-proxy
+spec:
+  # One replica, recreated rather than rolled: the mirror lives on a ReadWriteOnce volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: git-proxy
+  template:
+    metadata:
+      labels:
+        app: git-proxy
+    spec:
+      serviceAccountName: git-proxy
+      containers:
+        - name: git-proxy
+          # Replace with your Docker Hub image after the CI pipeline pushes it
+          image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+            - containerPort: 8443
+              name: https
+          env:
+            # Single-repo mode. For several repos, mount a repos.conf instead (see ../README.md).
+            - name: AZURE_DEVOPS_URL
+              value: https://dev.azure.com/<org>/<project>/_git/<repo>
+            - name: SYNC_INTERVAL
+              value: "60"
+            # basic (default): the proxy generates a token per repo and prints it to the log.
+            # none: no auth on the git endpoints - only behind a NetworkPolicy you trust.
+            - name: GIT_PROXY_AUTH
+              value: basic
+            - name: AZURE_CLIENT_ID
+              value: <client-id>
+            - name: AZURE_TENANT_ID
+              value: <tenant-id>
+            - name: AZURE_FEDERATED_TOKEN_FILE
+              value: /var/run/secrets/azure/tokens/azure-identity-token
+          volumeMounts:
+            - name: repos-data
+              mountPath: /repos
+            - name: azure-identity-token
+              mountPath: /var/run/secrets/azure/tokens
+              readOnly: true
+            # Optional: uncomment to supply your own TLS cert (apply ../tls-secret.yaml)
+            # - name: tls
+            #   mountPath: /etc/git-proxy/tls
+            #   readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # nginx binds :80 and drops to www-data for its workers.
+              add: ["CHOWN", "SETUID", "SETGID", "NET_BIND_SERVICE"]
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: repos-data
+          persistentVolumeClaim:
+            claimName: git-proxy-data
+        - name: azure-identity-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: azure-identity-token
+                  # Must match the federated credential's audience, or AADSTS70021.
+                  audience: api://AzureADTokenExchange
+                  expirationSeconds: 3600
+        # - name: tls
+        #   secret:
+        #     secretName: git-proxy-tls

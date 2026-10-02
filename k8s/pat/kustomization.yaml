@@ -1,0 +1,12 @@
+# The proxy authenticates to Azure DevOps with a Personal Access Token.
+#
+#   kubectl apply -k k8s/pat
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - deployment.yaml
+  - secret.yaml

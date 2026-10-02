@@ -10,8 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
  && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /repos /run/nginx /var/run /etc/git-proxy \
- && chown 10001:10001 /etc/git-proxy /repos
+RUN mkdir -p /repos /run/nginx /var/run /etc/git-proxy
 
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY start.sh /start.sh

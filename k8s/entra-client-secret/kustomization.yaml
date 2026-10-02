@@ -1,0 +1,20 @@
+# The proxy authenticates to Azure DevOps with the client secret of a Microsoft Entra app
+# registration. Prefer ../entra-workload-identity when the cluster supports workload identity: it needs no secret.
+#
+# Before applying, outside this repo:
+#   1. Create an Entra app registration and a client secret for it.
+#   2. Add that app to your Azure DevOps organization and give it Contribute on the repo.
+#      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
+#   3. Fill in <client-id> and <tenant-id> in deployment.yaml and <client-secret> in secret.yaml.
+#      Client secrets expire, so rotate it before its end date.
+#
+#   kubectl apply -k k8s/entra-client-secret
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - deployment.yaml
+  - secret.yaml
