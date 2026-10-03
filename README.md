@@ -52,6 +52,8 @@ https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 | Variable | Default | Description |
 |---|---|---|
 | `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
+| `HTTP_PORT` | `80` | Port nginx listens on for HTTP inside the container |
+| `HTTPS_PORT` | `8443` | Port nginx listens on for HTTPS inside the container |
 | `AZURE_DEVOPS_URL` | — | Single-repo mode: the repo URL, used when no `repos.conf` is mounted |
 | `AZURE_PAT` | — | Single-repo mode: the PAT for `AZURE_DEVOPS_URL` |
 | `REPOS_CONF` | `/etc/git-proxy/repos.conf` | Path of the multi-repo config |

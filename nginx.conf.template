@@ -24,7 +24,7 @@ http {
 
     # ── HTTP ──────────────────────────────────────────────────────────────────
     server {
-        listen 80;
+        listen ${HTTP_PORT};
         server_name _;
 
         location = /health {
@@ -52,7 +52,7 @@ http {
 
     # ── HTTPS ─────────────────────────────────────────────────────────────────
     server {
-        listen 8443 ssl;
+        listen ${HTTPS_PORT} ssl;
         server_name _;
 
         ssl_certificate     /etc/git-proxy/tls/tls.crt;

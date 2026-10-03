@@ -4,7 +4,7 @@ services:
     container_name: git-v2-proxy
     ports:
       - "7080:80"
-      - "7443:443"
+      - "7443:8443"
     environment:
       SYNC_INTERVAL: "${SYNC_INTERVAL:-60}"
     volumes:

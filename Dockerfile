@@ -19,6 +19,6 @@ RUN chmod +x /start.sh
 EXPOSE 80 8443
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD wget -q --spider http://localhost/health || exit 1
+    CMD wget -q --spider http://localhost:${HTTP_PORT:-80}/health || exit 1
 
 CMD ["/start.sh"]

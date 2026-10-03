@@ -7,6 +7,8 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-60}"
 # basic (default): per-repo generated token, printed to the log. none: no auth on the git
 # endpoints - only safe when something else (e.g. a NetworkPolicy) restricts who can reach them.
 GIT_PROXY_AUTH="${GIT_PROXY_AUTH:-basic}"
+HTTP_PORT="${HTTP_PORT:-80}"
+HTTPS_PORT="${HTTPS_PORT:-8443}"
 
 # Upstream auth: Entra when AZURE_CLIENT_ID and AZURE_TENANT_ID are set together with
 # AZURE_FEDERATED_TOKEN_FILE (workload identity) or AZURE_CLIENT_SECRET, otherwise a PAT.
@@ -97,8 +99,8 @@ case "$GIT_PROXY_AUTH" in
     none)  GIT_AUTH_DIRECTIVES='' ;;
     *) echo "[init] ERROR: GIT_PROXY_AUTH must be basic or none" >&2; exit 1 ;;
 esac
-export GIT_AUTH_DIRECTIVES
-envsubst '${GIT_HTTP_BACKEND} ${GIT_AUTH_DIRECTIVES}' \
+export GIT_AUTH_DIRECTIVES HTTP_PORT HTTPS_PORT
+envsubst '${GIT_HTTP_BACKEND} ${GIT_AUTH_DIRECTIVES} ${HTTP_PORT} ${HTTPS_PORT}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/nginx.conf
 
@@ -250,7 +252,7 @@ echo "[init] Starting nginx..."
 nginx
 
 echo ""
-echo "[ready] Serving ${REPO_COUNT} repo(s) on :80 — sync every ${SYNC_INTERVAL}s"
+echo "[ready] Serving ${REPO_COUNT} repo(s) on :${HTTP_PORT} (http) and :${HTTPS_PORT} (https) — sync every ${SYNC_INTERVAL}s"
 
 # ── Sync loop (all repos, every SYNC_INTERVAL seconds) ───────────────────────
 while true; do
