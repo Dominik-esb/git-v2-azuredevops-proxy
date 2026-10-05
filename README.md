@@ -234,6 +234,18 @@ kubectl apply -f k8s/service.yaml
 
 The service is `ClusterIP` by default. Add an Ingress or change to `LoadBalancer` to expose it outside the cluster.
 
+## Releases
+
+Pull requests and pushes to `main` only **build** the image (multi-arch) and run the smoke test. Nothing is pushed to Docker Hub.
+An image is published only when a version tag is pushed:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+The [Release workflow](.github/workflows/release.yml) then runs the smoke test, pushes `1.2.3`, `1.2`, `1` and `latest` to Docker Hub (multi-arch, with SBOM and provenance), and creates a GitHub Release with generated notes.
+
 ## License
 
 MIT — see [LICENSE](LICENSE)
