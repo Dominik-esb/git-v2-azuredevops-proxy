@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: git-proxy
-  namespace: grafana-horizon
+  namespace: git-proxy
   labels:
     app: git-proxy
 spec:
