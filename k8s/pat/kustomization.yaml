@@ -1,0 +1,38 @@
+# The proxy authenticates to Azure DevOps with a Personal Access Token.
+#
+# Fill in AZURE_DEVOPS_URL in ../base/deployment.yaml and the PAT in secret.yaml, then:
+#
+#   kubectl apply -k k8s/pat
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - secret.yaml
+
+# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# components:
+#   - ../components/network-policy
+
+# Inline JSON patches rather than a partial Deployment file, so file-by-file scanners (Trivy) do not
+# mistake the patch for a complete, insecure Deployment.
+patches:
+  - target:
+      kind: Deployment
+      name: git-proxy
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: UPSTREAM_AUTH
+          value: pat
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_PAT
+          valueFrom:
+            secretKeyRef:
+              name: git-proxy-credentials
+              key: AZURE_PAT

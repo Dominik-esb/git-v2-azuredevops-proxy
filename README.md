@@ -21,10 +21,10 @@ Clones and fetches are served locally at full speed with protocol v2. Pushes are
 
 ## Requirements
 
-- Docker + Docker Compose
-- Azure DevOps Personal Access Token with **Code → Read & Write** scope per repo
+- Docker Compose
+- An Azure DevOps Personal Access Token with **Code → Read & Write** scope per repo, or a Microsoft Entra identity (workload identity on Kubernetes, or a client secret) — see [Authenticating to Azure DevOps](#authenticating-to-azure-devops)
 
-## Setup
+## Quick Setup
 
 ```bash
 # 1. Create your repos config (contains PATs — keep it secret, never commit it)
@@ -52,8 +52,50 @@ https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 | Variable | Default | Description |
 |---|---|---|
 | `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
+| `HTTP_PORT` | `80` | Port nginx listens on for HTTP inside the container |
+| `HTTPS_PORT` | `8443` | Port nginx listens on for HTTPS inside the container |
+| `AZURE_DEVOPS_URL` | — | Single-repo mode: the repo URL, used when no `repos.conf` is mounted |
+| `AZURE_PAT` | — | Single-repo mode: the PAT for `AZURE_DEVOPS_URL` |
+| `REPOS_CONF` | `/etc/git-proxy/repos.conf` | Path of the multi-repo config |
+| `GIT_PROXY_AUTH` | `basic` | `basic`: a generated token per repo, printed to the log. `none`: no auth on the git endpoints — anyone who can reach the proxy can then **push** to Azure DevOps as its identity, so only use it behind a NetworkPolicy (see [`k8s/components/network-policy`](k8s/components/network-policy)). The proxy logs a warning at startup |
+| `UPSTREAM_AUTH` | `auto` | `auto`: Entra when its variables are complete, otherwise PAT. `pat` or `entra` to choose explicitly — recommended on AKS, where the workload identity webhook injects the `AZURE_*` variables into any labelled pod. With `entra`, missing variables are an error; with `auto`, partly set ones are a warning |
+| `AZURE_CLIENT_ID` | — | Entra: client ID of the app registration or managed identity |
+| `AZURE_TENANT_ID` | — | Entra: tenant ID |
+| `AZURE_FEDERATED_TOKEN_FILE` | — | Entra workload identity: path of the projected service account token |
+| `AZURE_CLIENT_SECRET` | — | Entra client secret: the app registration's secret. Ignored when `AZURE_FEDERATED_TOKEN_FILE` is set |
+| `AZURE_AUTHORITY_HOST` | `https://login.microsoftonline.com/` | Entra: authority, for sovereign clouds |
 
 Set in `.env` or via `docker compose --env-file .env up`.
+
+## Authenticating to Azure DevOps
+
+The proxy supports three ways to authenticate to Azure DevOps.
+
+**Personal Access Token** — the default. A PAT with **Code → Read & Write**, either per repo in
+`repos.conf` or as `AZURE_PAT`.
+
+**Microsoft Entra workload identity** — no PAT and no secret, for Kubernetes. Set
+`AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_FEDERATED_TOKEN_FILE` (the same variable names
+the Azure Workload Identity webhook injects on AKS). The proxy exchanges the projected service
+account token for an Azure DevOps access token, sends it as a bearer header on every fetch and
+forwarded push — scoped to the Azure DevOps hosts in `repos.conf`, so it is never sent anywhere
+else — and refreshes it before it expires, independently of `SYNC_INTERVAL`. In this mode `repos.conf` lines need only
+the URL; a PAT left in a line is ignored, with a warning. It needs:
+
+- a publicly reachable OIDC issuer for the cluster
+- an Entra app registration or managed identity with a federated credential for the proxy's
+  service account (audience `api://AzureADTokenExchange`)
+- that identity added to the Azure DevOps organization with **Contribute** on the repo. Read is
+  enough to mirror, but every push then fails with `TF401027 ... 'GenericContribute' permission`.
+
+See [`k8s/entra-workload-identity`](k8s/entra-workload-identity) for a complete example.
+
+**Microsoft Entra client secret** — for Docker Compose or any host without workload identity.
+Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_CLIENT_SECRET` of an Entra app registration.
+The proxy gets and refreshes its Azure DevOps access token the same way as with workload
+identity, and `repos.conf` lines need only the URL. Add the app registration to the Azure DevOps
+organization with **Contribute** on the repo. Secrets expire, so rotate it before its end date.
+See [`k8s/entra-client-secret`](k8s/entra-client-secret) for a Kubernetes example.
 
 ## Usage
 
@@ -114,7 +156,7 @@ The PAT needs **Code → Read** scope (add **Write** if you want push-back).
 For a single repo you can skip `repos.conf` entirely and use env vars. Deploy to the **same namespace as Grafana** so the in-cluster DNS name resolves:
 
 ```yaml
-# k8s/deployment.yaml (relevant snippet)
+# k8s/base/deployment.yaml + the patch in k8s/pat/kustomization.yaml (relevant snippet)
 env:
   - name: AZURE_DEVOPS_URL
     value: "https://dev.azure.com/<org>/<project>/_git/<repo>"
@@ -199,7 +241,7 @@ In the Grafana UI (**Administration → Provisioning → Add repository**), set 
 
 ![Grafana Pure Git provisioning config pointing at the proxy](docs/images/grafana-provisioning-config.png)
 
-For a trusted cert in Kubernetes, apply `k8s/tls-secret.yaml` and uncomment the TLS volume in `k8s/deployment.yaml`.
+For a trusted cert in Kubernetes, apply `k8s/tls-secret.yaml` and uncomment the TLS volume in `k8s/base/deployment.yaml`.
 
 #### Result
 
@@ -221,16 +263,33 @@ docker logs -f git-v2-proxy
 
 ## Kubernetes
 
-```bash
-# 1. Fill in your repos in k8s/secret.yaml (the repos.conf key)
-# 2. Update the image name in k8s/deployment.yaml
+[`k8s/`](k8s) is a kustomize base with one overlay per way of authenticating to Azure DevOps.
+The Deployment lives in the base; each overlay only patches in its credential, so probes,
+resources and the security context cannot drift apart.
 
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secret.yaml
-kubectl apply -f k8s/pvc.yaml
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
+| | |
+|---|---|
+| [`k8s/base`](k8s/base) | Namespace, PVC, Service and Deployment (no Azure DevOps credential), shared by all overlays |
+| [`k8s/pat`](k8s/pat) | Adds `AZURE_PAT` from a Secret |
+| [`k8s/entra-workload-identity`](k8s/entra-workload-identity) | Adds a ServiceAccount, the projected token and the `AZURE_*` workload identity variables |
+| [`k8s/entra-client-secret`](k8s/entra-client-secret) | Adds the `AZURE_*` variables and `AZURE_CLIENT_SECRET` from a Secret |
+| [`k8s/components/network-policy`](k8s/components/network-policy) | Optional: admits traffic only from Grafana pods. Recommended with `GIT_PROXY_AUTH=none` |
+
+```bash
+# 1. Set the image tag and AZURE_DEVOPS_URL in k8s/base/deployment.yaml
+# 2. PAT: fill in k8s/pat/secret.yaml.
+#    Entra: fill in <client-id> and <tenant-id> in the overlay's kustomization.yaml patch - plus, for
+#    workload identity, create the federated credential described in its kustomization.yaml, or
+#    for a client secret, fill in secret.yaml.
+kubectl apply -k k8s/pat      # or: k8s/entra-workload-identity, k8s/entra-client-secret
 ```
+
+Each overlay sets `UPSTREAM_AUTH` explicitly, so the mode never depends on which `AZURE_*`
+variables happen to be present.
+
+For several repos, mount a `repos.conf` (a Secret) and point `REPOS_CONF` at it instead of
+setting `AZURE_DEVOPS_URL`. Mount it outside `/etc/git-proxy` — the proxy writes its generated
+TLS certificate (and, with Entra, its token) there, so that directory must stay writable.
 
 The service is `ClusterIP` by default. Add an Ingress or change to `LoadBalancer` to expose it outside the cluster.
 

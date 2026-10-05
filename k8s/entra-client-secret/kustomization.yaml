@@ -1,0 +1,55 @@
+# The proxy authenticates to Azure DevOps with the client secret of a Microsoft Entra app
+# registration. Prefer ../entra-workload-identity when the cluster supports workload identity: it needs no secret.
+#
+# Before applying, outside this repo:
+#   1. Create an Entra app registration and a client secret for it.
+#   2. Add that app to your Azure DevOps organization and give it Contribute on the repo.
+#      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
+#   3. Fill in <client-id> and <tenant-id> in the patch below,
+#      AZURE_DEVOPS_URL in ../base/deployment.yaml and <client-secret> in secret.yaml.
+#      Client secrets expire, so rotate it before its end date.
+#
+#   kubectl apply -k k8s/entra-client-secret
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - secret.yaml
+
+# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# components:
+#   - ../components/network-policy
+
+# Inline JSON patches rather than a partial Deployment file, so file-by-file scanners (Trivy) do not
+# mistake the patch for a complete, insecure Deployment.
+patches:
+  - target:
+      kind: Deployment
+      name: git-proxy
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: UPSTREAM_AUTH
+          value: entra
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_CLIENT_ID
+          value: <client-id>
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_TENANT_ID
+          value: <tenant-id>
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: git-proxy-credentials
+              key: AZURE_CLIENT_SECRET

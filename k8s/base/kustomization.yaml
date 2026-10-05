@@ -1,0 +1,12 @@
+# Shared by ../pat, ../entra-workload-identity and ../entra-client-secret, which each patch in
+# their Azure DevOps credential. Not deployable alone.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - service.yaml
+  - deployment.yaml

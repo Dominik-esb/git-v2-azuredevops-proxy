@@ -9,3 +9,6 @@
 #
 # https://dev.azure.com/myorg/myproject/_git/repo1  pat1here
 # https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
+#
+# With Entra (AZURE_CLIENT_ID / AZURE_TENANT_ID plus AZURE_FEDERATED_TOKEN_FILE or AZURE_CLIENT_SECRET),
+# leave the PAT out:  https://dev.azure.com/myorg/myproject/_git/repo1

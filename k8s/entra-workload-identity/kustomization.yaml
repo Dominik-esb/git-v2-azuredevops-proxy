@@ -1,0 +1,74 @@
+# The proxy authenticates to Azure DevOps with Microsoft Entra workload identity - no PAT, no
+# secret. It exchanges its projected service account token for an Azure DevOps access token and
+# refreshes it before it expires.
+#
+# Before applying, outside this repo:
+#   1. The cluster's OIDC issuer must be publicly reachable (on AKS: enable the OIDC issuer).
+#   2. Create an Entra app registration (or user-assigned managed identity) with a federated
+#      credential: issuer = your cluster's issuer URL,
+#      subject = system:serviceaccount:git-proxy:git-proxy, audience = api://AzureADTokenExchange
+#   3. Add that identity to your Azure DevOps organization and give it Contribute on the repo.
+#      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
+#   4. Fill in <client-id> and <tenant-id> in the patch below and AZURE_DEVOPS_URL in ../base/deployment.yaml.
+#
+#   kubectl apply -k k8s/entra-workload-identity
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: git-proxy
+
+resources:
+  - ../base
+  - serviceaccount.yaml
+
+# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# components:
+#   - ../components/network-policy
+
+# Inline JSON patches rather than a partial Deployment file, so file-by-file scanners (Trivy) do not
+# mistake the patch for a complete, insecure Deployment.
+patches:
+  - target:
+      kind: Deployment
+      name: git-proxy
+    patch: |-
+      - op: add
+        path: /spec/template/spec/serviceAccountName
+        value: git-proxy
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: UPSTREAM_AUTH
+          value: entra
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_CLIENT_ID
+          value: <client-id>
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_TENANT_ID
+          value: <tenant-id>
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_FEDERATED_TOKEN_FILE
+          value: /var/run/secrets/azure/tokens/azure-identity-token
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: azure-identity-token
+          mountPath: /var/run/secrets/azure/tokens
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: azure-identity-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: azure-identity-token
+                  # Must match the federated credential's audience, or AADSTS70021.
+                  audience: api://AzureADTokenExchange
+                  expirationSeconds: 3600

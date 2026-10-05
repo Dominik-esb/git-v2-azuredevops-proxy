@@ -24,7 +24,7 @@ http {
 
     # ── HTTP ──────────────────────────────────────────────────────────────────
     server {
-        listen 80;
+        listen ${HTTP_PORT};
         server_name _;
 
         location = /health {
@@ -33,8 +33,7 @@ http {
         }
 
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
-            auth_basic "Git Proxy";
-            auth_basic_user_file /repos/.htpasswd;
+            ${GIT_AUTH_DIRECTIVES}
 
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
             include fastcgi_params;
@@ -53,7 +52,7 @@ http {
 
     # ── HTTPS ─────────────────────────────────────────────────────────────────
     server {
-        listen 8443 ssl;
+        listen ${HTTPS_PORT} ssl;
         server_name _;
 
         ssl_certificate     /etc/git-proxy/tls/tls.crt;
@@ -69,8 +68,7 @@ http {
         }
 
         location ~ "^(/[^/]+\.git)/(HEAD|info/refs|objects/info/[^/]+|objects/[0-9a-f]{2}/[0-9a-f]{38}|objects/pack/pack-[0-9a-f]{40}\.(pack|idx)|git-upload-pack|git-receive-pack)$" {
-            auth_basic "Git Proxy";
-            auth_basic_user_file /repos/.htpasswd;
+            ${GIT_AUTH_DIRECTIVES}
 
             fastcgi_pass unix:/var/run/fcgiwrap.sock;
             include fastcgi_params;
