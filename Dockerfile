@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fcgiwrap \
     gettext-base \
     ca-certificates \
+    curl \
     wget \
     openssl \
  && rm -rf /var/lib/apt/lists/*

@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-proxy
+spec:
+  template:
+    spec:
+      containers:
+        - name: git-proxy
+          env:
+            - name: UPSTREAM_AUTH
+              value: pat
+            - name: AZURE_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: git-proxy-credentials
+                  key: AZURE_PAT

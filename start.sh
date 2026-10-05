@@ -10,20 +10,52 @@ GIT_PROXY_AUTH="${GIT_PROXY_AUTH:-basic}"
 HTTP_PORT="${HTTP_PORT:-80}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
 
-# Upstream auth: Entra when AZURE_CLIENT_ID and AZURE_TENANT_ID are set together with
-# AZURE_FEDERATED_TOKEN_FILE (workload identity) or AZURE_CLIENT_SECRET, otherwise a PAT.
+# Upstream auth. UPSTREAM_AUTH=auto (default) picks Entra when AZURE_CLIENT_ID and
+# AZURE_TENANT_ID are set together with AZURE_FEDERATED_TOKEN_FILE (workload identity) or
+# AZURE_CLIENT_SECRET, otherwise a PAT. Set pat or entra to stop auto-detection - e.g. on AKS,
+# where the workload identity webhook injects the AZURE_* variables into any labelled pod.
 ADO_RESOURCE="499b84ac-1321-427f-aa17-267ca6975798"
 ENTRA_AUTH_FILE="/etc/git-proxy/entra-auth.gitconfig"
-if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_FEDERATED_TOKEN_FILE" ]; then
-    UPSTREAM_AUTH=entra
-    ENTRA_CREDENTIAL=workload-identity
-elif [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ]; then
-    UPSTREAM_AUTH=entra
-    ENTRA_CREDENTIAL=client-secret
-else
-    UPSTREAM_AUTH=pat
-fi
+UPSTREAM_AUTH="${UPSTREAM_AUTH:-auto}"
 AZURE_AUTHORITY_HOST="${AZURE_AUTHORITY_HOST:-https://login.microsoftonline.com/}"
+
+ENTRA_CREDENTIAL=""
+if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ]; then
+    if [ -n "$AZURE_FEDERATED_TOKEN_FILE" ]; then
+        ENTRA_CREDENTIAL=workload-identity
+    elif [ -n "$AZURE_CLIENT_SECRET" ]; then
+        ENTRA_CREDENTIAL=client-secret
+    fi
+fi
+
+case "$UPSTREAM_AUTH" in
+    auto)
+        if [ -n "$ENTRA_CREDENTIAL" ]; then
+            UPSTREAM_AUTH=entra
+        else
+            UPSTREAM_AUTH=pat
+            if [ -n "$AZURE_CLIENT_ID$AZURE_TENANT_ID$AZURE_FEDERATED_TOKEN_FILE$AZURE_CLIENT_SECRET" ]; then
+                echo "[init] WARNING: Entra variables are only partly set - Entra needs AZURE_CLIENT_ID," \
+                     "AZURE_TENANT_ID and one of AZURE_FEDERATED_TOKEN_FILE or AZURE_CLIENT_SECRET." \
+                     "Falling back to PAT." >&2
+            fi
+        fi
+        ;;
+    entra)
+        if [ -z "$ENTRA_CREDENTIAL" ]; then
+            echo "[init] ERROR: UPSTREAM_AUTH=entra needs AZURE_CLIENT_ID, AZURE_TENANT_ID and one of" \
+                 "AZURE_FEDERATED_TOKEN_FILE or AZURE_CLIENT_SECRET" >&2
+            exit 1
+        fi
+        ;;
+    pat)
+        ENTRA_CREDENTIAL=""
+        ;;
+    *)
+        echo "[init] ERROR: UPSTREAM_AUTH must be auto, pat or entra" >&2
+        exit 1
+        ;;
+esac
 echo "[init] upstream auth: $UPSTREAM_AUTH${ENTRA_CREDENTIAL:+ ($ENTRA_CREDENTIAL)}, proxy auth: $GIT_PROXY_AUTH"
 
 if [ ! -s "$REPOS_CONF" ]; then
@@ -43,28 +75,62 @@ fi
 # access token and writes it as an http.extraHeader include, which every mirror's config points at.
 # Refreshed by the sync loop well before expiry, so the post-receive hook always finds a valid one.
 TOKEN_EXPIRES_AT=0
+
+# Percent-encodes every byte. Valid for application/x-www-form-urlencoded whatever the input,
+# so no assumption is needed about which characters a secret contains.
+urlencode() {
+    printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n' | sed 's/../%&/g'
+}
+
+# scheme://host/ of every repo in repos.conf. The bearer header is scoped to these, so it is never
+# sent to another remote or a redirect target.
+upstream_origins() {
+    grep -v '^[[:space:]]*#' "$REPOS_CONF" | awk '{print $1}' \
+        | sed -n 's|^\([a-z][a-z0-9+.-]*://[^/]*\).*|\1/|p' | sort -u
+}
+
 refresh_entra_token() {
     if [ "$ENTRA_CREDENTIAL" = workload-identity ]; then
-        credential="client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_assertion=$(cat "$AZURE_FEDERATED_TOKEN_FILE")"
+        credential="client_assertion_type=$(urlencode urn:ietf:params:oauth:client-assertion-type:jwt-bearer)&client_assertion=$(urlencode "$(cat "$AZURE_FEDERATED_TOKEN_FILE")")"
     else
-        credential="client_secret=$(printf '%s' "$AZURE_CLIENT_SECRET" | sed 's/%/%25/g; s/&/%26/g; s/+/%2B/g; s/=/%3D/g; s/ /%20/g; s|/|%2F|g; s/#/%23/g; s/?/%3F/g')"
+        credential="client_secret=$(urlencode "$AZURE_CLIENT_SECRET")"
     fi
-    response=$(wget -q -O - \
-        --post-data "client_id=${AZURE_CLIENT_ID}&scope=${ADO_RESOURCE}%2F.default&grant_type=client_credentials&${credential}" \
-        "${AZURE_AUTHORITY_HOST%/}/${AZURE_TENANT_ID}/oauth2/v2.0/token" 2>&1) || {
-        echo "[entra] ERROR: token request failed: $response" >&2
+    # The body holds the credential, so it goes in a private file rather than on wget's command
+    # line, where any process in the container could read it from /proc/<pid>/cmdline.
+    body=$(umask 077; mktemp)
+    printf 'client_id=%s&scope=%s&grant_type=client_credentials&%s' \
+        "$(urlencode "$AZURE_CLIENT_ID")" "$(urlencode "${ADO_RESOURCE}/.default")" "$credential" > "$body"
+    unset credential
+    # curl rather than wget: wget drops the response body on a 401, which is exactly where Entra
+    # explains a wrong or expired secret (AADSTS7000215, AADSTS7000222, ...).
+    rc=0
+    response=$(curl -sS --max-time 30 --data-binary @"$body" \
+        -H 'Content-Type: application/x-www-form-urlencoded' -w '\n%{http_code}' \
+        "${AZURE_AUTHORITY_HOST%/}/${AZURE_TENANT_ID}/oauth2/v2.0/token" 2>&1) || rc=$?
+    rm -f "$body"
+    status=$(printf '%s' "$response" | tail -n 1)
+    response=$(printf '%s' "$response" | sed '$d')
+    if [ "$rc" -ne 0 ] || [ "$status" != 200 ]; then
+        echo "[entra] ERROR: token request failed (curl exit $rc, HTTP ${status:-none}): $response" >&2
         return 1
-    }
+    fi
     token=$(printf '%s' "$response" | sed -n 's/.*"access_token" *: *"\([^"]*\)".*/\1/p')
     expires_in=$(printf '%s' "$response" | sed -n 's/.*"expires_in" *: *\([0-9]*\).*/\1/p')
     if [ -z "$token" ]; then
         echo "[entra] ERROR: no access_token in response" >&2
         return 1
     fi
-    umask 077
-    printf '[http]\n\textraHeader = Authorization: Bearer %s\n' "$token" > "${ENTRA_AUTH_FILE}.tmp"
-    mv "${ENTRA_AUTH_FILE}.tmp" "$ENTRA_AUTH_FILE"
-    umask 022
+    if ! (
+        umask 077
+        trap 'rm -f "${ENTRA_AUTH_FILE}.tmp"' EXIT
+        for origin in $(upstream_origins); do
+            printf '[http "%s"]\n\textraHeader = Authorization: Bearer %s\n' "$origin" "$token"
+        done > "${ENTRA_AUTH_FILE}.tmp"
+        mv "${ENTRA_AUTH_FILE}.tmp" "$ENTRA_AUTH_FILE"
+    ); then
+        echo "[entra] ERROR: could not write $ENTRA_AUTH_FILE" >&2
+        return 1
+    fi
     TOKEN_EXPIRES_AT=$(( $(date +%s) + ${expires_in:-3600} ))
     echo "[entra] token refreshed, expires in ${expires_in:-3600}s"
 }
@@ -96,7 +162,12 @@ echo "[init] git-http-backend: $GIT_HTTP_BACKEND"
 export GIT_HTTP_BACKEND
 case "$GIT_PROXY_AUTH" in
     basic) GIT_AUTH_DIRECTIVES='auth_basic "Git Proxy"; auth_basic_user_file /repos/.htpasswd;' ;;
-    none)  GIT_AUTH_DIRECTIVES='' ;;
+    none)
+        GIT_AUTH_DIRECTIVES=''
+        echo "[init] WARNING: GIT_PROXY_AUTH=none - anyone who can reach this proxy can clone, push" \
+             "and delete branches in Azure DevOps as the proxy's identity. Restrict access to it," \
+             "e.g. with the NetworkPolicy in k8s/components/network-policy." >&2
+        ;;
     *) echo "[init] ERROR: GIT_PROXY_AUTH must be basic or none" >&2; exit 1 ;;
 esac
 export GIT_AUTH_DIRECTIVES HTTP_PORT HTTPS_PORT
@@ -216,6 +287,10 @@ while IFS= read -r line || [ -n "$line" ]; do
     pat=$(printf '%s' "$line" | awk '{print $2}')
     [ -z "$url" ] && continue
     [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ] && continue
+    if [ "$UPSTREAM_AUTH" = entra ] && [ -n "$pat" ] && [ "$pat" != "-" ]; then
+        echo "[init] WARNING: $(basename "$url"): ignoring the PAT in $REPOS_CONF - upstream auth is" \
+             "Entra. Set UPSTREAM_AUTH=pat to use the PAT instead." >&2
+    fi
     setup_repo "$url" "$pat"
     REPO_COUNT=$((REPO_COUNT + 1))
 done < "$REPOS_CONF"
@@ -255,9 +330,15 @@ echo ""
 echo "[ready] Serving ${REPO_COUNT} repo(s) on :${HTTP_PORT} (http) and :${HTTPS_PORT} (https) — sync every ${SYNC_INTERVAL}s"
 
 # ── Sync loop (all repos, every SYNC_INTERVAL seconds) ───────────────────────
+# Wakes at least every 60s to keep the Entra token fresh, independently of SYNC_INTERVAL - the
+# post-receive hook reads the same token, so it must never expire between fetches.
+TICK=$(( SYNC_INTERVAL < 60 ? SYNC_INTERVAL : 60 ))
+NEXT_SYNC=$(( $(date +%s) + SYNC_INTERVAL ))
 while true; do
-    sleep "$SYNC_INTERVAL"
+    sleep "$TICK"
     ensure_entra_token || echo "[entra] WARN: keeping the previous token" >&2
+    [ "$(date +%s)" -ge "$NEXT_SYNC" ] || continue
+    NEXT_SYNC=$(( $(date +%s) + SYNC_INTERVAL ))
 
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in '#'*|'') continue ;; esac

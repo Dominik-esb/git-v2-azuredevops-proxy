@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-proxy
+spec:
+  template:
+    spec:
+      serviceAccountName: git-proxy
+      containers:
+        - name: git-proxy
+          env:
+            - name: UPSTREAM_AUTH
+              value: entra
+            - name: AZURE_CLIENT_ID
+              value: <client-id>
+            - name: AZURE_TENANT_ID
+              value: <tenant-id>
+            - name: AZURE_FEDERATED_TOKEN_FILE
+              value: /var/run/secrets/azure/tokens/azure-identity-token
+          volumeMounts:
+            - name: azure-identity-token
+              mountPath: /var/run/secrets/azure/tokens
+              readOnly: true
+      volumes:
+        - name: azure-identity-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: azure-identity-token
+                  # Must match the federated credential's audience, or AADSTS70021.
+                  audience: api://AzureADTokenExchange
+                  expirationSeconds: 3600

@@ -5,7 +5,8 @@
 #   1. Create an Entra app registration and a client secret for it.
 #   2. Add that app to your Azure DevOps organization and give it Contribute on the repo.
 #      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
-#   3. Fill in <client-id> and <tenant-id> in deployment.yaml and <client-secret> in secret.yaml.
+#   3. Fill in <client-id> and <tenant-id> in deployment-patch.yaml,
+#      AZURE_DEVOPS_URL in ../base/deployment.yaml and <client-secret> in secret.yaml.
 #      Client secrets expire, so rotate it before its end date.
 #
 #   kubectl apply -k k8s/entra-client-secret
@@ -16,5 +17,11 @@ namespace: git-proxy
 
 resources:
   - ../base
-  - deployment.yaml
   - secret.yaml
+
+# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# components:
+#   - ../components/network-policy
+
+patches:
+  - path: deployment-patch.yaml

@@ -9,7 +9,7 @@
 #      subject = system:serviceaccount:git-proxy:git-proxy, audience = api://AzureADTokenExchange
 #   3. Add that identity to your Azure DevOps organization and give it Contribute on the repo.
 #      Read alone mirrors fine, but every push fails with TF401027 (GenericContribute).
-#   4. Fill in <client-id> and <tenant-id> in deployment.yaml.
+#   4. Fill in <client-id> and <tenant-id> in deployment-patch.yaml and AZURE_DEVOPS_URL in ../base/deployment.yaml.
 #
 #   kubectl apply -k k8s/entra-workload-identity
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -19,5 +19,11 @@ namespace: git-proxy
 
 resources:
   - ../base
-  - deployment.yaml
   - serviceaccount.yaml
+
+# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# components:
+#   - ../components/network-policy
+
+patches:
+  - path: deployment-patch.yaml

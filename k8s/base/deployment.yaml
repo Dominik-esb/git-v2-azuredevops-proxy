@@ -17,31 +17,30 @@ spec:
       labels:
         app: git-proxy
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: git-proxy
-          # Replace with your Docker Hub image after the CI pipeline pushes it
-          image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:latest
-          imagePullPolicy: Always
+          # Pin a released version (see "Releases" in ../../README.md) rather than :latest, so a
+          # pod restart cannot silently pick up a different image.
+          image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:1.0.0
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
               name: http
             - containerPort: 8443
               name: https
           env:
-            # Single-repo mode. For several repos, mount a repos.conf instead (see ../README.md).
+            # Single-repo mode. For several repos, mount a repos.conf instead (see ../../README.md).
             - name: AZURE_DEVOPS_URL
               value: https://dev.azure.com/<org>/<project>/_git/<repo>
             - name: SYNC_INTERVAL
               value: "60"
             # basic (default): the proxy generates a token per repo and prints it to the log.
-            # none: no auth on the git endpoints - only behind a NetworkPolicy you trust.
+            # none: no auth on the git endpoints - only with ../components/network-policy or similar.
             - name: GIT_PROXY_AUTH
               value: basic
-            - name: AZURE_PAT
-              valueFrom:
-                secretKeyRef:
-                  name: git-proxy-credentials
-                  key: AZURE_PAT
           volumeMounts:
             - name: repos-data
               mountPath: /repos
@@ -52,14 +51,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: http
             initialDelaySeconds: 120
             periodSeconds: 30
             timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5

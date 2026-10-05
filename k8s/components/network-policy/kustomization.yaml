@@ -1,0 +1,11 @@
+# Optional: admit traffic to the proxy only from Grafana pods, in any namespace. Add it to an
+# overlay with `components: [../components/network-policy]`. Needs a CNI that enforces
+# NetworkPolicy. Not deployable alone.
+#
+# Strongly recommended with GIT_PROXY_AUTH=none, where reaching the proxy is enough to push to
+# Azure DevOps as its identity. Adjust the podSelector if your client is not Grafana.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - networkpolicy.yaml

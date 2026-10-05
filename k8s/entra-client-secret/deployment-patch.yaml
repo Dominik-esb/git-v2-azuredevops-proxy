@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-proxy
+spec:
+  template:
+    spec:
+      containers:
+        - name: git-proxy
+          env:
+            - name: UPSTREAM_AUTH
+              value: entra
+            - name: AZURE_CLIENT_ID
+              value: <client-id>
+            - name: AZURE_TENANT_ID
+              value: <tenant-id>
+            - name: AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: git-proxy-credentials
+                  key: AZURE_CLIENT_SECRET
