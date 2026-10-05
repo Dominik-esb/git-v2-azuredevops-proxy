@@ -103,7 +103,7 @@ This is a complete example of running the proxy in the same namespace as Grafana
 
 ```bash
 kubectl create secret generic git-proxy-credentials \
-  --namespace grafana-horizon \
+  --namespace grafana \
   --from-literal=AZURE_PAT=<your-azure-devops-pat>
 ```
 
@@ -127,7 +127,7 @@ env:
         key: AZURE_PAT
 ```
 
-The proxy derives the local repo name from the URL — `Horizon-Dashboards` becomes `/Horizon-Dashboards.git`.
+The proxy derives the local repo name from the URL — `grafana-dashboards` becomes `/grafana-dashboards.git`.
 
 #### 3. Service
 
@@ -138,7 +138,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: git-proxy
-  namespace: grafana-horizon          # same namespace as Grafana
+  namespace: grafana          # same namespace as Grafana
   annotations:
     argocd.argoproj.io/sync-options: Replace=true   # avoids SSA port-name conflicts
 spec:
@@ -163,11 +163,11 @@ On first start the proxy generates a random token per repo and prints it to stdo
 
   REPO                   USERNAME                TOKEN
   ----                   --------                -----
-  Horizon-Dashboards     Horizon-Dashboards      <generated-token>
+  grafana-dashboards     grafana-dashboards      <generated-token>
 ```
 
 ```bash
-kubectl logs -n grafana-horizon deploy/git-proxy | grep -A5 '\[credentials\]'
+kubectl logs -n grafana deploy/git-proxy | grep -A5 '\[credentials\]'
 ```
 
 The token is stable across restarts (stored in the git-repos volume).
@@ -185,11 +185,11 @@ providers:
   - name: dashboards
     type: git
     options:
-      url: http://git-proxy.grafana-horizon.svc.cluster.local/Horizon-Dashboards.git
+      url: http://git-proxy.grafana.svc.cluster.local/grafana-dashboards.git
       ref: main
       rootPath: dashboards/
       authType: basic
-      username: Horizon-Dashboards      # repo name (from credentials table above)
+      username: grafana-dashboards      # repo name (from credentials table above)
       password: <generated-token>       # token from proxy logs
 ```
 
