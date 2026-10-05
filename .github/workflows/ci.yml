@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck
+        run: shellcheck --severity=warning start.sh tests/*.sh
+
+      - name: Hadolint
+        uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Validate Kubernetes manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubeconform() {
+            docker run -i --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/yannh/kubeconform:v0.8.0 \
+              -strict -summary -ignore-filename-pattern 'kustomization\.yaml$' "$@"
+          }
+          overlays=0
+          for k in $(find k8s -name kustomization.yaml | sort); do
+            # A base marked "Not deployable alone" is covered by the overlays that use it.
+            grep -q 'Not deployable alone' "$k" && continue
+            dir=$(dirname "$k")
+            echo "::group::kustomize $dir"
+            kubectl kustomize "$dir" | kubeconform -
+            echo "::endgroup::"
+            overlays=$((overlays + 1))
+          done
+          # Plain manifests, when the repo doesn't use kustomize.
+          if [ "$overlays" -eq 0 ]; then
+            kubeconform k8s
+          fi
+
+  smoke:
+    name: Build & smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: git-proxy:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: tests/smoke.sh git-proxy:test
