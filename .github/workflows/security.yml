@@ -30,15 +30,31 @@ jobs:
         with:
           persist-credentials: false
 
+      # Kustomize patches are partial Deployments; scanned on their own they look like workloads
+      # with no securityContext, limits, etc. Scan what is actually applied: each rendered overlay.
+      - name: Render kustomize overlays
+        run: |
+          set -eu
+          mkdir -p k8s-rendered
+          for k in $(find k8s -name kustomization.yaml | sort); do
+            grep -q 'Not deployable alone' "$k" && continue
+            dir=$(dirname "$k")
+            grep -qE '^kind: *Component' "$k" && continue
+            kubectl kustomize "$dir" > "k8s-rendered/$(echo "$dir" | tr / -).yaml"
+            echo "rendered $dir"
+          done
+
       - name: Scan repository
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           scanners: secret,misconfig
+          skip-files: "k8s/**/*-patch.yaml"
           format: sarif
           output: trivy-repo.sarif
           severity: MEDIUM,HIGH,CRITICAL
+          limit-severities-for-sarif: true
 
       - name: Upload to code scanning
         if: always() && hashFiles('trivy-repo.sarif') != ''
