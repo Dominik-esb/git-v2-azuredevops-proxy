@@ -16,5 +16,23 @@ resources:
 # components:
 #   - ../components/network-policy
 
+# Inline JSON patches rather than a partial Deployment file, so file-by-file scanners (Trivy) do not
+# mistake the patch for a complete, insecure Deployment.
 patches:
-  - path: deployment-patch.yaml
+  - target:
+      kind: Deployment
+      name: git-proxy
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: UPSTREAM_AUTH
+          value: pat
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: AZURE_PAT
+          valueFrom:
+            secretKeyRef:
+              name: git-proxy-credentials
+              key: AZURE_PAT

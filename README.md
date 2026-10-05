@@ -156,7 +156,7 @@ The PAT needs **Code → Read** scope (add **Write** if you want push-back).
 For a single repo you can skip `repos.conf` entirely and use env vars. Deploy to the **same namespace as Grafana** so the in-cluster DNS name resolves:
 
 ```yaml
-# k8s/base/deployment.yaml + k8s/pat/deployment-patch.yaml (relevant snippet)
+# k8s/base/deployment.yaml + the patch in k8s/pat/kustomization.yaml (relevant snippet)
 env:
   - name: AZURE_DEVOPS_URL
     value: "https://dev.azure.com/<org>/<project>/_git/<repo>"
@@ -278,7 +278,7 @@ resources and the security context cannot drift apart.
 ```bash
 # 1. Set the image tag and AZURE_DEVOPS_URL in k8s/base/deployment.yaml
 # 2. PAT: fill in k8s/pat/secret.yaml.
-#    Entra: fill in <client-id> and <tenant-id> in the overlay's deployment-patch.yaml - plus, for
+#    Entra: fill in <client-id> and <tenant-id> in the overlay's kustomization.yaml patch - plus, for
 #    workload identity, create the federated credential described in its kustomization.yaml, or
 #    for a client secret, fill in secret.yaml.
 kubectl apply -k k8s/pat      # or: k8s/entra-workload-identity, k8s/entra-client-secret
