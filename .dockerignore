@@ -1,0 +1,12 @@
+# Keep the build context small and secrets out of it.
+.git
+.github
+.claude
+docs
+k8s
+tests
+*.md
+.env
+.env.*
+repos.conf
+.DS_Store

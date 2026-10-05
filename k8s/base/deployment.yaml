@@ -22,9 +22,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: git-proxy
-          # Pin a released version (see "Releases" in ../../README.md) rather than :latest, so a
-          # pod restart cannot silently pick up a different image.
-          image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:1.0.0
+          # Pin a released version (https://github.com/Dominik-esb/git-v2-azuredevops-proxy/releases)
+          # rather than :latest, so a pod restart cannot silently pick up a different image.
+          image: dominikesb/git-v2-azuredevops-proxy:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

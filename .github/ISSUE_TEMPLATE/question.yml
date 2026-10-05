@@ -1,0 +1,14 @@
+name: ❓ Question
+description: Ask how to set up or use the proxy.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: Please check the [README](https://github.com/Dominik-esb/git-v2-azuredevops-proxy#readme) and [guides](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/tree/main/docs) first.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What are you trying to do, and what have you tried?
+    validations:
+      required: true
