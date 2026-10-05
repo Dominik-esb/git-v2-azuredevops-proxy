@@ -7,8 +7,26 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-60}"
 # basic (default): per-repo generated token, printed to the log. none: no auth on the git
 # endpoints - only safe when something else (e.g. a NetworkPolicy) restricts who can reach them.
 GIT_PROXY_AUTH="${GIT_PROXY_AUTH:-basic}"
-HTTP_PORT="${HTTP_PORT:-80}"
+HTTP_PORT="${HTTP_PORT:-8080}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
+
+# The proxy runs unprivileged. A /repos volume created by an older, root-running image is still
+# owned by root - say how to fix that instead of failing on the first write.
+# Checks OWNERSHIP inside /repos, not just writability: a volume can be world-writable at its
+# root while the mirrors the old image cloned into it are root-owned, and the setup below has to
+# chmod files it owns (the post-receive hook).
+not_writable=""
+for dir in /repos /etc/git-proxy /tmp; do
+    [ -w "$dir" ] || not_writable="$dir"
+done
+[ -n "$not_writable" ] || not_writable=$(find /repos -mindepth 1 ! -user "$(id -u)" -print -quit 2>/dev/null)
+if [ -n "$not_writable" ]; then
+    echo "[init] ERROR: $not_writable is not owned or writable by uid $(id -u). If it was created by" \
+         "an older image that ran as root, fix the ownership once: chown -R $(id -u):$(id -g) /repos" \
+         "(see \"Upgrading\" in the README)." >&2
+    exit 1
+fi
+mkdir -p /tmp/nginx
 
 # Upstream auth. UPSTREAM_AUTH=auto (default) picks Entra when AZURE_CLIENT_ID and
 # AZURE_TENANT_ID are set together with AZURE_FEDERATED_TOKEN_FILE (workload identity) or
@@ -173,7 +191,7 @@ esac
 export GIT_AUTH_DIRECTIVES HTTP_PORT HTTPS_PORT
 envsubst '${GIT_HTTP_BACKEND} ${GIT_AUTH_DIRECTIVES} ${HTTP_PORT} ${HTTPS_PORT}' \
     < /etc/nginx/nginx.conf.template \
-    > /etc/nginx/nginx.conf
+    > /tmp/nginx/nginx.conf
 
 # ── TLS certificate ───────────────────────────────────────────────────────────
 TLS_DIR="/etc/git-proxy/tls"
@@ -315,16 +333,18 @@ rm -f /tmp/creds.txt
 
 # ── Start fcgiwrap ────────────────────────────────────────────────────────────
 echo "[init] Starting fcgiwrap..."
-fcgiwrap -s unix:/var/run/fcgiwrap.sock &
+# A container restart keeps /tmp when it is a volume, and a stale socket would block the bind.
+rm -f /tmp/fcgiwrap.sock
+fcgiwrap -s unix:/tmp/fcgiwrap.sock &
 TRIES=0
-until [ -S /var/run/fcgiwrap.sock ] || [ "$TRIES" -ge 20 ]; do
+until [ -S /tmp/fcgiwrap.sock ] || [ "$TRIES" -ge 20 ]; do
     sleep 0.5; TRIES=$((TRIES + 1))
 done
-chmod 777 /var/run/fcgiwrap.sock 2>/dev/null || true
 
 # ── Start nginx ───────────────────────────────────────────────────────────────
 echo "[init] Starting nginx..."
-nginx
+# -e: never try the compiled-in /var/log/nginx/error.log, which is not writable here.
+nginx -e /dev/stderr -c /tmp/nginx/nginx.conf
 
 echo ""
 echo "[ready] Serving ${REPO_COUNT} repo(s) on :${HTTP_PORT} (http) and :${HTTPS_PORT} (https) — sync every ${SYNC_INTERVAL}s"

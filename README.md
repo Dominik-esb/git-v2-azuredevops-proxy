@@ -52,7 +52,7 @@ https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 | Variable | Default | Description |
 |---|---|---|
 | `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
-| `HTTP_PORT` | `80` | Port nginx listens on for HTTP inside the container |
+| `HTTP_PORT` | `8080` | Port nginx listens on for HTTP inside the container. The container runs unprivileged, so a port below 1024 only works where the runtime lets unprivileged processes bind it (`net.ipv4.ip_unprivileged_port_start`, which Docker and recent containerd set to 0). The default avoids depending on that |
 | `HTTPS_PORT` | `8443` | Port nginx listens on for HTTPS inside the container |
 | `AZURE_DEVOPS_URL` | — | Single-repo mode: the repo URL, used when no `repos.conf` is mounted |
 | `AZURE_PAT` | — | Single-repo mode: the PAT for `AZURE_DEVOPS_URL` |
@@ -190,7 +190,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 80
+      targetPort: 8080     # the container listens on 8080; the Service keeps port 80
       protocol: TCP
 ```
 
@@ -292,6 +292,57 @@ setting `AZURE_DEVOPS_URL`. Mount it outside `/etc/git-proxy` — the proxy writ
 TLS certificate (and, with Entra, its token) there, so that directory must stay writable.
 
 The service is `ClusterIP` by default. Add an Ingress or change to `LoadBalancer` to expose it outside the cluster.
+
+## Security and upgrading from a root image
+
+> [!WARNING]
+> **Breaking change.** Starting with the release that makes the container non-root, it listens on
+> **8080** instead of 80, and a `/repos` volume written by an earlier image must be re-owned by uid
+> 10001. Existing deployments stop working until both are done — see
+> [Upgrading](#upgrading-from-an-image-that-ran-as-root) below.
+
+The container runs as an unprivileged user (uid/gid `10001`) with no Linux capabilities, and
+listens on `8080` (HTTP) and `8443` (HTTPS). It writes only to `/repos`, `/etc/git-proxy` and
+`/tmp`, so the root filesystem can be read-only. The Kubernetes examples meet Pod Security
+`restricted`: `runAsNonRoot`, all capabilities dropped, `readOnlyRootFilesystem`, `seccompProfile:
+RuntimeDefault`.
+
+### Upgrading from an image that ran as root
+
+Earlier images ran as root on port 80. To move to this one:
+
+- **Port.** The container port is now `8080`. Change port mappings such as `7080:80` to
+  `7080:8080`, and a Kubernetes Service's `targetPort` to `8080` (or the port name `http`). The
+  Service itself can keep port `80`, so in-cluster URLs don't change. Setting `HTTP_PORT=80` back works only where the
+  container runtime lets unprivileged processes bind low ports; 8080 does not depend on it.
+- **Existing `/repos` volume.** Files the old image wrote are owned by root, and the proxy refuses
+  to start with a message saying so. Fix the ownership once:
+  - **Docker:**
+
+    ```bash
+    docker run --rm -u 0 -v <volume>:/repos --entrypoint chown <image> -R 10001:10001 /repos
+    ```
+
+  - **Kubernetes:** scale the Deployment to 0 and run one root pod on the PVC. It needs a
+    namespace that allows it, because the pod is deliberately not `restricted`:
+
+    ```bash
+    kubectl -n git-proxy scale deploy/git-proxy --replicas=0
+    kubectl -n git-proxy run fix-owner --rm -it --restart=Never --image=busybox --overrides='
+      {"spec":{"containers":[{"name":"fix-owner","image":"busybox",
+        "command":["chown","-R","10001:10001","/repos"],
+        "volumeMounts":[{"name":"r","mountPath":"/repos"}]}],
+        "volumes":[{"name":"r","persistentVolumeClaim":{"claimName":"git-proxy-data"}}]}}'
+    kubectl -n git-proxy scale deploy/git-proxy --replicas=1
+    ```
+
+    `fsGroup: 10001` in [`k8s/base`](k8s/base/deployment.yaml) does **not** replace this. It
+    changes a volume's group, not its owner, and the proxy needs to own its mirrors (it rewrites
+    and `chmod`s their hooks, and git's `safe.directory` check can reject a repository owned by
+    another user). What `fsGroup` does do is let the proxy create its mirror on a fresh PVC whose
+    root belongs to root. It only works on storage that supports it — `hostPath`, k3s/kind
+    `local-path` and most NFS ignore it, and the kubelet logs
+    `The requested fsGroup is 10001, but the volume ... has GID 0`.
 
 ## Releases
 

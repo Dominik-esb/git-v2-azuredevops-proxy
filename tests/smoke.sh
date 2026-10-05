@@ -18,8 +18,9 @@ cleanup() {
         docker logs "$NAME" 2>&1 | tail -50 || true
     fi
     docker rm -f "$NAME" >/dev/null 2>&1 || true
-    # The container writes to the upstream repo as root; let it clean up after itself.
-    docker run --rm -v "$WORK:/w" "$IMAGE" rm -rf /w/upstream >/dev/null 2>&1 || true
+    # The upstream repo holds files from both the host user and the container (uid 10001), so
+    # remove it from a root container.
+    docker run --rm --user 0 -v "$WORK:/w" "$IMAGE" rm -rf /w/upstream >/dev/null 2>&1 || true
     rm -rf "$WORK"
     exit "$status"
 }
@@ -43,7 +44,7 @@ printf 'file:///upstream/demo  unused-pat\n' > "$WORK/config/repos.conf"
 
 # ── Start the proxy ───────────────────────────────────────────────────────────
 docker run -d --name "$NAME" \
-    -p "127.0.0.1:${PORT}:80" -p "127.0.0.1:${TLS_PORT}:8443" \
+    -p "127.0.0.1:${PORT}:8080" -p "127.0.0.1:${TLS_PORT}:8443" \
     -e SYNC_INTERVAL=5 \
     -e REPOS_CONF=/config/repos.conf \
     -v "$WORK/upstream:/upstream" \

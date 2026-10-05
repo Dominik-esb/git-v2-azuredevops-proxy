@@ -18,6 +18,15 @@ spec:
         app: git-proxy
     spec:
       securityContext:
+        # Pod Security "restricted": unprivileged, no capabilities, read-only root filesystem.
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # Lets uid 10001 create its mirror on a fresh PVC whose root is owned by root. It changes the
+        # group, not the owner, so a PVC the older root image wrote needs a one-time chown instead -
+        # see "Upgrading" in ../../README.md.
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -27,7 +36,7 @@ spec:
           image: DOCKERHUB_USERNAME/git-v2-azuredevops-proxy:1.0.0
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - containerPort: 8080
               name: http
             - containerPort: 8443
               name: https
@@ -44,6 +53,12 @@ spec:
           volumeMounts:
             - name: repos-data
               mountPath: /repos
+            # The only other writable paths (readOnlyRootFilesystem): generated config, TLS
+            # cert and Entra token; nginx and fcgiwrap runtime files.
+            - name: config
+              mountPath: /etc/git-proxy
+            - name: tmp
+              mountPath: /tmp
             # Optional: uncomment to supply your own TLS cert (apply ../tls-secret.yaml)
             # - name: tls
             #   mountPath: /etc/git-proxy/tls
@@ -66,8 +81,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
-              # nginx binds :80 and drops to www-data for its workers.
-              add: ["CHOWN", "SETUID", "SETGID", "NET_BIND_SERVICE"]
+            readOnlyRootFilesystem: true
           resources:
             requests:
               memory: "128Mi"
@@ -79,6 +93,10 @@ spec:
         - name: repos-data
           persistentVolumeClaim:
             claimName: git-proxy-data
+        - name: config
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
         # - name: tls
         #   secret:
         #     secretName: git-proxy-tls
