@@ -1,0 +1,94 @@
+name: 🐞 Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        > [!WARNING]
+        > Logs contain the proxy's generated access tokens and may contain your Azure DevOps URLs. **Remove tokens, PATs and secrets** before posting.
+
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behaviour
+      description: What happens? Include the exact error message.
+      placeholder: When I push through the proxy, the push succeeds locally but Azure DevOps shows ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      placeholder: The commit should appear in Azure DevOps.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the proxy with ...
+        2. Run `git clone ...`
+        3. See error
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Proxy version
+      description: Image tag, e.g. `1.0.0`
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Docker / Docker Compose
+        - Kubernetes (AKS)
+        - Kubernetes (other)
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Azure DevOps authentication
+      options:
+        - Personal Access Token
+        - Entra workload identity
+        - Entra client secret
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: Git client
+      description: e.g. `git 2.47`, Grafana 13.2 Git Sync
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Proxy logs
+      description: Output of `docker logs` or `kubectl logs` around the failure, with secrets removed.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Configuration (without secrets), screenshots, links.
+    validations:
+      required: false

@@ -1,310 +1,174 @@
-# Git Protocol v2 Proxy for Azure DevOps
+# git-v2-azuredevops-proxy
 
-A Docker container that acts as a local Git Smart HTTP server with **protocol v2** support, proxying Azure DevOps repositories that only speak protocol v1.
+[![CI](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/ci.yml)
+[![Security](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/security.yml/badge.svg)](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/Dominik-esb/git-v2-azuredevops-proxy?logo=github)](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/releases/latest)
+[![Docker Pulls](https://img.shields.io/docker/pulls/dominikesb/git-v2-azuredevops-proxy?logo=docker)](https://hub.docker.com/r/dominikesb/git-v2-azuredevops-proxy)
+[![License](https://img.shields.io/github/license/Dominik-esb/git-v2-azuredevops-proxy)](LICENSE)
 
-## Why
+A Git Smart HTTP server with **protocol v2** in front of Azure DevOps, which only speaks protocol v1.
 
-Azure DevOps does not support Git HTTP protocol v2. Some tools (CI systems, IDEs, custom tooling) require or benefit from v2's more efficient ref negotiation. This container sits in between:
+Azure DevOps does not support Git protocol v2. Tools that require it — for example
+[Grafana Git Sync](docs/grafana.md) — cannot talk to Azure DevOps directly. This proxy keeps a
+mirror of your repositories, serves clones and fetches with protocol v2, and forwards pushes to
+Azure DevOps.
 
 ```
-your client (v2)  →  container (v1↔v2 bridge)  →  Azure DevOps (v1)
+git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v1)
 ```
+
+## Features
+
+- **Protocol v2** clones and fetches, served from a local mirror
+- **Push forwarding** — pushes and branch deletions go straight to Azure DevOps
+- **Several repositories** per instance, each with its own generated access token
+- **Azure DevOps authentication** with a PAT, or with Microsoft Entra (workload identity or client secret) — no PAT to rotate
+- **HTTP and HTTPS**, with an auto-generated self-signed certificate or your own
+- **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
+- Multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
 
 ## How it works
 
 | Direction | Trigger | Mechanism |
 |---|---|---|
-| Azure DevOps → local | Every `SYNC_INTERVAL` seconds | Background `git fetch --mirror` |
-| Local → Azure DevOps | On every client push | `post-receive` hook forwards push upstream |
+| Azure DevOps → proxy | Every `SYNC_INTERVAL` seconds | Background `git fetch` into a mirror |
+| Proxy → Azure DevOps | Every client push | A `post-receive` hook forwards the push |
 
-Clones and fetches are served locally at full speed with protocol v2. Pushes are transparently forwarded to Azure DevOps in real time.
-
-## Requirements
-
-- Docker Compose
-- An Azure DevOps Personal Access Token with **Code → Read & Write** scope per repo, or a Microsoft Entra identity (workload identity on Kubernetes, or a client secret) — see [Authenticating to Azure DevOps](#authenticating-to-azure-devops)
-
-## Quick Setup
+## Quick start
 
 ```bash
-# 1. Create your repos config (contains PATs — keep it secret, never commit it)
-cp repos.conf.example repos.conf
-# edit repos.conf and add your repos
-
-# 2. Start
-docker compose up -d --build
+docker run -d --name git-v2-proxy \
+  -p 7080:80 -p 7443:8443 \
+  -e AZURE_DEVOPS_URL=https://dev.azure.com/<org>/<project>/_git/<repo> \
+  -e AZURE_PAT=<pat> \
+  -v git-repos:/repos \
+  dominikesb/git-v2-azuredevops-proxy:1
 ```
 
-## repos.conf
+The proxy prints a generated access token per repository to its log:
 
-One repo per line — the local URL is auto-derived from the Azure DevOps repo name:
+```bash
+docker logs git-v2-proxy | grep -A5 '\[credentials\]'
+```
+
+Then clone with protocol v2, using the repository name as user name and the token as password:
+
+```bash
+git -c protocol.version=2 clone http://<repo>:<token>@localhost:7080/<repo>.git
+```
+
+Pushes to that clone are forwarded to Azure DevOps.
+
+### Several repositories
+
+Mount a `repos.conf` with one repository per line. The local path is derived from the
+repository name, so `…/_git/repo1` is served at `/repo1.git`:
 
 ```
-# Format: <AZURE_DEVOPS_URL> <PAT>
+# <AZURE_DEVOPS_URL>                              <PAT>
 https://dev.azure.com/myorg/myproject/_git/repo1  pat1here
 https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 ```
 
-`repo1` → `http://localhost:7080/repo1.git`
+With [`docker-compose.yml`](docker-compose.yml):
+
+```bash
+cp repos.conf.example repos.conf   # contains PATs: keep it secret, never commit it
+docker compose up -d
+```
 
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
-| `HTTP_PORT` | `80` | Port nginx listens on for HTTP inside the container |
-| `HTTPS_PORT` | `8443` | Port nginx listens on for HTTPS inside the container |
-| `AZURE_DEVOPS_URL` | — | Single-repo mode: the repo URL, used when no `repos.conf` is mounted |
+| `AZURE_DEVOPS_URL` | — | Single-repo mode: the repository URL, used when no `repos.conf` is mounted |
 | `AZURE_PAT` | — | Single-repo mode: the PAT for `AZURE_DEVOPS_URL` |
 | `REPOS_CONF` | `/etc/git-proxy/repos.conf` | Path of the multi-repo config |
-| `GIT_PROXY_AUTH` | `basic` | `basic`: a generated token per repo, printed to the log. `none`: no auth on the git endpoints — anyone who can reach the proxy can then **push** to Azure DevOps as its identity, so only use it behind a NetworkPolicy (see [`k8s/components/network-policy`](k8s/components/network-policy)). The proxy logs a warning at startup |
-| `UPSTREAM_AUTH` | `auto` | `auto`: Entra when its variables are complete, otherwise PAT. `pat` or `entra` to choose explicitly — recommended on AKS, where the workload identity webhook injects the `AZURE_*` variables into any labelled pod. With `entra`, missing variables are an error; with `auto`, partly set ones are a warning |
+| `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
+| `GIT_PROXY_AUTH` | `basic` | `basic`: a generated token per repository, printed to the log. `none`: no authentication on the git endpoints — anyone who can reach the proxy can then **push** to Azure DevOps as its identity, so only use it behind a NetworkPolicy (see [`k8s/components/network-policy`](k8s/components/network-policy)) |
+| `UPSTREAM_AUTH` | `auto` | `auto`: Entra when its variables are complete, otherwise PAT. Set `pat` or `entra` to choose explicitly — recommended on AKS, where the workload identity webhook injects the `AZURE_*` variables into any labelled pod |
 | `AZURE_CLIENT_ID` | — | Entra: client ID of the app registration or managed identity |
 | `AZURE_TENANT_ID` | — | Entra: tenant ID |
 | `AZURE_FEDERATED_TOKEN_FILE` | — | Entra workload identity: path of the projected service account token |
-| `AZURE_CLIENT_SECRET` | — | Entra client secret: the app registration's secret. Ignored when `AZURE_FEDERATED_TOKEN_FILE` is set |
-| `AZURE_AUTHORITY_HOST` | `https://login.microsoftonline.com/` | Entra: authority, for sovereign clouds |
-
-Set in `.env` or via `docker compose --env-file .env up`.
+| `AZURE_CLIENT_SECRET` | — | Entra client secret. Ignored when `AZURE_FEDERATED_TOKEN_FILE` is set |
+| `AZURE_AUTHORITY_HOST` | `https://login.microsoftonline.com/` | Entra authority, for sovereign clouds |
+| `HTTP_PORT` | `80` | HTTP port inside the container |
+| `HTTPS_PORT` | `8443` | HTTPS port inside the container |
 
 ## Authenticating to Azure DevOps
 
-The proxy supports three ways to authenticate to Azure DevOps.
+| Method | Use when | Variables |
+|---|---|---|
+| Personal Access Token | Anywhere; simplest | `AZURE_PAT`, or per repository in `repos.conf` |
+| Entra workload identity | Kubernetes with a public OIDC issuer (e.g. AKS) — no secret at all | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_FEDERATED_TOKEN_FILE` |
+| Entra client secret | Docker, or Kubernetes without workload identity | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` |
 
-**Personal Access Token** — the default. A PAT with **Code → Read & Write**, either per repo in
-`repos.conf` or as `AZURE_PAT`.
+**PAT** — needs **Code → Read & Write** on the repository.
 
-**Microsoft Entra workload identity** — no PAT and no secret, for Kubernetes. Set
-`AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_FEDERATED_TOKEN_FILE` (the same variable names
-the Azure Workload Identity webhook injects on AKS). The proxy exchanges the projected service
-account token for an Azure DevOps access token, sends it as a bearer header on every fetch and
-forwarded push — scoped to the Azure DevOps hosts in `repos.conf`, so it is never sent anywhere
-else — and refreshes it before it expires, independently of `SYNC_INTERVAL`. In this mode `repos.conf` lines need only
-the URL; a PAT left in a line is ignored, with a warning. It needs:
+**Entra** — the proxy exchanges its credential for an Azure DevOps access token, sends it as a
+bearer header only to the Azure DevOps hosts in `repos.conf`, and refreshes it before it expires.
+`repos.conf` lines need only the URL. The identity must be added to the Azure DevOps organization
+with **Contribute** on the repository: with Read only, mirroring works but every push fails with
+`TF401027 ... 'GenericContribute' permission`.
 
-- a publicly reachable OIDC issuer for the cluster
-- an Entra app registration or managed identity with a federated credential for the proxy's
-  service account (audience `api://AzureADTokenExchange`)
-- that identity added to the Azure DevOps organization with **Contribute** on the repo. Read is
-  enough to mirror, but every push then fails with `TF401027 ... 'GenericContribute' permission`.
-
-See [`k8s/entra-workload-identity`](k8s/entra-workload-identity) for a complete example.
-
-**Microsoft Entra client secret** — for Docker Compose or any host without workload identity.
-Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_CLIENT_SECRET` of an Entra app registration.
-The proxy gets and refreshes its Azure DevOps access token the same way as with workload
-identity, and `repos.conf` lines need only the URL. Add the app registration to the Azure DevOps
-organization with **Contribute** on the repo. Secrets expire, so rotate it before its end date.
-See [`k8s/entra-client-secret`](k8s/entra-client-secret) for a Kubernetes example.
-
-## Usage
-
-```bash
-# Clone
-git clone http://localhost:7080/<repo-name>.git
-
-# Force protocol v2 explicitly
-git -c protocol.version=2 clone http://localhost:7080/<repo-name>.git
-
-# Push — forwarded to Azure DevOps automatically
-git push
-```
-
-## Verify protocol v2
-
-```bash
-GIT_TRACE_PACKET=1 git -C <repo> fetch 2>&1 | head -5
-# Look for: packet: ... version 2
-```
+For workload identity you also need an Entra app registration or managed identity with a
+federated credential for the proxy's service account (audience `api://AzureADTokenExchange`).
+Complete examples: [`k8s/entra-workload-identity`](k8s/entra-workload-identity) and
+[`k8s/entra-client-secret`](k8s/entra-client-secret).
 
 ## HTTPS
 
-HTTPS is enabled by default on port `7443`. On first start the container **auto-generates a self-signed certificate** (valid 10 years) — no config needed.
+HTTPS is served on container port `8443`. On first start the proxy generates a self-signed
+certificate (valid 10 years):
 
 ```bash
-git clone https://localhost:7443/<repo-name>.git
-# self-signed: add -c http.sslVerify=false if your client rejects it
+git -c http.sslVerify=false clone https://<repo>:<token>@localhost:7443/<repo>.git
 ```
 
-### Bring your own certificate
-
-Mount `tls.crt` and `tls.key` to override the self-signed cert:
-
-```yaml
-# docker-compose.yml — uncomment the tls lines
-volumes:
-  - ./tls/tls.crt:/etc/git-proxy/tls/tls.crt:ro
-  - ./tls/tls.key:/etc/git-proxy/tls/tls.key:ro
-```
-
-### Grafana Git provisioning (Azure DevOps on Kubernetes)
-
-This is a complete example of running the proxy in the same namespace as Grafana so that Grafana's built-in Git provisioning (Pure Git / Git v2 Smart HTTP) can sync dashboards from Azure DevOps.
-
-#### 1. Create the PAT secret
-
-```bash
-kubectl create secret generic git-proxy-credentials \
-  --namespace grafana \
-  --from-literal=AZURE_PAT=<your-azure-devops-pat>
-```
-
-The PAT needs **Code → Read** scope (add **Write** if you want push-back).
-
-#### 2. Deploy the proxy
-
-For a single repo you can skip `repos.conf` entirely and use env vars. Deploy to the **same namespace as Grafana** so the in-cluster DNS name resolves:
-
-```yaml
-# k8s/base/deployment.yaml + the patch in k8s/pat/kustomization.yaml (relevant snippet)
-env:
-  - name: AZURE_DEVOPS_URL
-    value: "https://dev.azure.com/<org>/<project>/_git/<repo>"
-  - name: SYNC_INTERVAL
-    value: "60"
-  - name: AZURE_PAT
-    valueFrom:
-      secretKeyRef:
-        name: git-proxy-credentials
-        key: AZURE_PAT
-```
-
-The proxy derives the local repo name from the URL — `grafana-dashboards` becomes `/grafana-dashboards.git`.
-
-#### 3. Service
-
-Deploy the Service in the same namespace:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: git-proxy
-  namespace: grafana          # same namespace as Grafana
-  annotations:
-    argocd.argoproj.io/sync-options: Replace=true   # avoids SSA port-name conflicts
-spec:
-  type: ClusterIP
-  selector:
-    app: git-proxy
-  ports:
-    - name: http
-      port: 80
-      targetPort: 80
-      protocol: TCP
-```
-
-> **ArgoCD note:** the `Replace=true` annotation is required when managing this Service with ArgoCD server-side apply. Without it, a port rename between deploys leaves a stale entry that causes a duplicate port-name validation error.
-
-#### 4. Get the generated access token
-
-On first start the proxy generates a random token per repo and prints it to stdout:
-
-```
-[credentials] Grafana Git provisioning credentials:
-
-  REPO                   USERNAME                TOKEN
-  ----                   --------                -----
-  grafana-dashboards     grafana-dashboards      <generated-token>
-```
-
-```bash
-kubectl logs -n grafana deploy/git-proxy | grep -A5 '\[credentials\]'
-```
-
-The token is stable across restarts (stored in the git-repos volume).
-
-![Container logs showing init sequence, credentials table, and live sync output](docs/images/container-logs.png)
-
-#### 5. Configure Grafana
-
-Use the in-cluster HTTP URL — no TLS needed for cluster-internal traffic:
-
-```yaml
-# Grafana dashboard provisioning (values.yaml extraObjects or ConfigMap)
-apiVersion: 1
-providers:
-  - name: dashboards
-    type: git
-    options:
-      url: http://git-proxy.grafana.svc.cluster.local/grafana-dashboards.git
-      ref: main
-      rootPath: dashboards/
-      authType: basic
-      username: grafana-dashboards      # repo name (from credentials table above)
-      password: <generated-token>       # token from proxy logs
-```
-
-The URL pattern is always `http://git-proxy.<namespace>.svc.cluster.local/<repo-name>.git`.
-
-In the Grafana UI (**Administration → Provisioning → Add repository**), set type **Pure Git** and fill in the URL, username, and token:
-
-![Grafana Pure Git provisioning config pointing at the proxy](docs/images/grafana-provisioning-config.png)
-
-For a trusted cert in Kubernetes, apply `k8s/tls-secret.yaml` and uncomment the TLS volume in `k8s/base/deployment.yaml`.
-
-#### Result
-
-Once connected, saving a dashboard in Grafana creates a commit in Azure DevOps automatically. The proxy syncs bidirectionally — changes pushed to DevOps appear in Grafana, and saves in Grafana push back through the proxy to DevOps.
-
-**Azure DevOps repo — dashboard JSON committed by Grafana:**
-
-![Azure DevOps repo showing test.json committed by Grafana](docs/images/devops-repo-dashboard.png)
-
-**Azure DevOps commit history — commit authored by Grafana:**
-
-![Azure DevOps commits list showing Save dashboard commit from Grafana](docs/images/devops-commit-by-grafana.png)
-
-## Logs
-
-```bash
-docker logs -f git-v2-proxy
-```
+To use your own certificate, mount `tls.crt` and `tls.key` into `/etc/git-proxy/tls/` (see the
+commented lines in [`docker-compose.yml`](docker-compose.yml)).
 
 ## Kubernetes
 
-[`k8s/`](k8s) is a kustomize base with one overlay per way of authenticating to Azure DevOps.
-The Deployment lives in the base; each overlay only patches in its credential, so probes,
-resources and the security context cannot drift apart.
+[`k8s/`](k8s) is a kustomize base with one overlay per authentication method. The Deployment
+lives in the base; each overlay only adds its credential.
 
-| | |
+| Path | Contents |
 |---|---|
-| [`k8s/base`](k8s/base) | Namespace, PVC, Service and Deployment (no Azure DevOps credential), shared by all overlays |
+| [`k8s/base`](k8s/base) | Namespace, PVC, Service and Deployment, shared by all overlays |
 | [`k8s/pat`](k8s/pat) | Adds `AZURE_PAT` from a Secret |
-| [`k8s/entra-workload-identity`](k8s/entra-workload-identity) | Adds a ServiceAccount, the projected token and the `AZURE_*` workload identity variables |
-| [`k8s/entra-client-secret`](k8s/entra-client-secret) | Adds the `AZURE_*` variables and `AZURE_CLIENT_SECRET` from a Secret |
+| [`k8s/entra-workload-identity`](k8s/entra-workload-identity) | Adds a ServiceAccount, the projected token and the workload identity variables |
+| [`k8s/entra-client-secret`](k8s/entra-client-secret) | Adds the Entra variables and `AZURE_CLIENT_SECRET` from a Secret |
 | [`k8s/components/network-policy`](k8s/components/network-policy) | Optional: admits traffic only from Grafana pods. Recommended with `GIT_PROXY_AUTH=none` |
 
 ```bash
-# 1. Set the image tag and AZURE_DEVOPS_URL in k8s/base/deployment.yaml
-# 2. PAT: fill in k8s/pat/secret.yaml.
-#    Entra: fill in <client-id> and <tenant-id> in the overlay's kustomization.yaml patch - plus, for
-#    workload identity, create the federated credential described in its kustomization.yaml, or
-#    for a client secret, fill in secret.yaml.
-kubectl apply -k k8s/pat      # or: k8s/entra-workload-identity, k8s/entra-client-secret
+# 1. Set AZURE_DEVOPS_URL (and the image tag, if needed) in k8s/base/deployment.yaml
+# 2. Fill in the overlay's secret.yaml or <client-id>/<tenant-id> — see its kustomization.yaml
+kubectl apply -k k8s/pat      # or k8s/entra-workload-identity, k8s/entra-client-secret
 ```
 
-Each overlay sets `UPSTREAM_AUTH` explicitly, so the mode never depends on which `AZURE_*`
-variables happen to be present.
+For several repositories, mount a `repos.conf` Secret outside `/etc/git-proxy` and point
+`REPOS_CONF` at it. The proxy writes its certificate and Entra token to `/etc/git-proxy`, so that
+directory must stay writable.
 
-For several repos, mount a `repos.conf` (a Secret) and point `REPOS_CONF` at it instead of
-setting `AZURE_DEVOPS_URL`. Mount it outside `/etc/git-proxy` — the proxy writes its generated
-TLS certificate (and, with Entra, its token) there, so that directory must stay writable.
+The Service is `ClusterIP`; add an Ingress or use `LoadBalancer` to expose it outside the cluster.
 
-The service is `ClusterIP` by default. Add an Ingress or change to `LoadBalancer` to expose it outside the cluster.
+## Guides
 
-## Releases
+- [Grafana Git Sync with Azure DevOps](docs/grafana.md) — sync dashboards between Grafana and an Azure DevOps repository through the proxy
 
-Pull requests and pushes to `main` only **build** the image (multi-arch) and run the smoke test. Nothing is pushed to Docker Hub.
-An image is published only when a version tag is pushed:
+## Troubleshooting
 
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
+- **Verify protocol v2:** `GIT_TRACE_PACKET=1 git -C <repo> fetch 2>&1 | grep 'version 2'`
+- **Logs:** `docker logs -f git-v2-proxy`, or `kubectl logs -n git-proxy deploy/git-proxy`
+- **Push fails with `TF401027`:** the identity has Read but not Contribute on the repository
+- **Shallow clones** (`git clone --depth 1`) are not supported yet and fail with `expected 'packfile', received 'shallow-info'`
 
-The [Release workflow](.github/workflows/release.yml) then runs the smoke test, pushes `1.2.3`, `1.2`, `1` and `latest` to Docker Hub (multi-arch, with SBOM and provenance), and creates a GitHub Release with generated notes.
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Please report security
+issues privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+[MIT](LICENSE)
