@@ -80,9 +80,11 @@ docker compose up -d
 
 ## Status page
 
-Open the proxy's root URL (e.g. `http://localhost:7080/`) for a read-only status page: an animated
-view of the data flow, a countdown to the next sync, and the last sync and push of every
-repository. It refreshes itself every few seconds.
+Open the proxy's root URL (e.g. `http://localhost:7080/`) for a read-only status page. Each
+repository is drawn as Azure DevOps → mirror → clients; an edge turns blue after a sync, orange
+after a forwarded push and red when the last one failed, labelled with how long ago it happened.
+Below that, a table lists the last sync and push of every repository. The page refreshes itself
+every few seconds.
 
 ![Status page with the animated data flow and per-repository sync and push times](docs/images/status-page.jpg)
 
