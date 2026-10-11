@@ -33,7 +33,7 @@ spec:
         - name: git-proxy
           # Pin a released version (https://github.com/Dominik-esb/git-v2-azuredevops-proxy/releases)
           # rather than :latest, so a pod restart cannot silently pick up a different image.
-          image: dominikesb/git-v2-azuredevops-proxy:1.0.0
+          image: dominikesb/git-v2-azuredevops-proxy:2.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -96,7 +96,9 @@ spec:
         - name: config
           emptyDir: {}
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            # nginx buffers push uploads here (client_max_body_size is unlimited).
+            sizeLimit: 1Gi
         # - name: tls
         #   secret:
         #     secretName: git-proxy-tls

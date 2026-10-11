@@ -19,11 +19,14 @@ not_writable=""
 for dir in /repos /etc/git-proxy /tmp; do
     [ -w "$dir" ] || not_writable="$dir"
 done
-[ -n "$not_writable" ] || not_writable=$(find /repos -mindepth 1 ! -user "$(id -u)" -print -quit 2>/dev/null)
+# Only the top levels: a 1.x volume is root-owned throughout, so this finds it without walking
+# every object on each start. lost+found is root-owned on any fresh ext4 volume - skip it.
+[ -n "$not_writable" ] || not_writable=$(find /repos -mindepth 1 -maxdepth 3 \
+    -path /repos/lost+found -prune -o ! -user "$(id -u)" -print -quit 2>/dev/null)
 if [ -n "$not_writable" ]; then
     echo "[init] ERROR: $not_writable is not owned or writable by uid $(id -u). If it was created by" \
          "an older image that ran as root, fix the ownership once: chown -R $(id -u):$(id -g) /repos" \
-         "(see \"Upgrading\" in the README)." >&2
+         "(see docs/upgrading-to-v2.md)." >&2
     exit 1
 fi
 mkdir -p /tmp/nginx
