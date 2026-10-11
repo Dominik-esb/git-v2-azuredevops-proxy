@@ -9,6 +9,7 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+    labels: [dependencies, ci]
 
   - package-ecosystem: docker
     directory: /
@@ -16,3 +17,4 @@ updates:
       interval: weekly
     commit-message:
       prefix: build
+    labels: [dependencies]

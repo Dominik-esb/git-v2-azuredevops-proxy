@@ -1,0 +1,27 @@
+name: PR labels
+
+# Every pull request needs one release-notes label (see .github/release.yml).
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled]
+
+permissions: {}
+
+jobs:
+  require-label:
+    name: Release-notes label
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check labels
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          for l in breaking-change enhancement bug security documentation dependencies ci chore; do
+            if printf '%s' "$LABELS" | grep -q "\"$l\""; then
+              echo "Found label: $l"
+              exit 0
+            fi
+          done
+          echo "::error::Add one of these labels: breaking-change, enhancement, bug, security, documentation, dependencies, ci, chore"
+          exit 1

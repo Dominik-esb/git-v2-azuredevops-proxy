@@ -1,0 +1,25 @@
+# Groups the generated GitHub Release notes by pull request label.
+changelog:
+  exclude:
+    labels:
+      - chore
+      - invalid
+      - duplicate
+      - wontfix
+  categories:
+    - title: 💥 Breaking Changes
+      labels: [breaking-change]
+    - title: 🔒 Security
+      labels: [security]
+    - title: ✨ New Features & Enhancements
+      labels: [enhancement]
+    - title: 🐞 Bug Fixes
+      labels: [bug]
+    - title: 📖 Documentation
+      labels: [documentation]
+    - title: 🛠️ Dependencies
+      labels: [dependencies]
+    - title: 🧰 CI & Tooling
+      labels: [ci]
+    - title: Other Changes
+      labels: ["*"]
