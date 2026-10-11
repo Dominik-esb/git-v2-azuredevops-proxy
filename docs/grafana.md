@@ -51,7 +51,7 @@ spec:
   ports:
     - name: http
       port: 80
-      targetPort: 80
+      targetPort: 8080     # the container listens on 8080; the Service keeps port 80
       protocol: TCP
 ```
 

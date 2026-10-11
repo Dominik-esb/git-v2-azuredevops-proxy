@@ -6,8 +6,8 @@ Security fixes are released for the latest minor version of the current major re
 
 | Version | Supported |
 |---|---|
-| latest `1.x` | ✅ |
-| older | ❌ |
+| latest `2.x` | ✅ |
+| `1.x` and older | ❌ |
 
 ## Reporting a vulnerability
 

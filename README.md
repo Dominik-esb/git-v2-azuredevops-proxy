@@ -38,11 +38,11 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 
 ```bash
 docker run -d --name git-v2-proxy \
-  -p 7080:80 -p 7443:8443 \
+  -p 7080:8080 -p 7443:8443 \
   -e AZURE_DEVOPS_URL=https://dev.azure.com/<org>/<project>/_git/<repo> \
   -e AZURE_PAT=<pat> \
   -v git-repos:/repos \
-  dominikesb/git-v2-azuredevops-proxy:1
+  dominikesb/git-v2-azuredevops-proxy:2
 ```
 
 The proxy prints a generated access token per repository to its log:
@@ -92,7 +92,7 @@ docker compose up -d
 | `AZURE_FEDERATED_TOKEN_FILE` | — | Entra workload identity: path of the projected service account token |
 | `AZURE_CLIENT_SECRET` | — | Entra client secret. Ignored when `AZURE_FEDERATED_TOKEN_FILE` is set |
 | `AZURE_AUTHORITY_HOST` | `https://login.microsoftonline.com/` | Entra authority, for sovereign clouds |
-| `HTTP_PORT` | `80` | HTTP port inside the container |
+| `HTTP_PORT` | `8080` | HTTP port inside the container. Ports below 1024 only work where the runtime lets unprivileged processes bind them |
 | `HTTPS_PORT` | `8443` | HTTPS port inside the container |
 
 ## Authenticating to Azure DevOps
@@ -153,9 +153,28 @@ directory must stay writable.
 
 The Service is `ClusterIP`; add an Ingress or use `LoadBalancer` to expose it outside the cluster.
 
+## Security
+
+The container runs as an unprivileged user (uid/gid `10001`) with no Linux capabilities, and
+writes only to `/repos`, `/etc/git-proxy` and `/tmp`, so the root filesystem can be read-only.
+The Kubernetes examples meet Pod Security `restricted` (`runAsNonRoot`, all capabilities dropped,
+`readOnlyRootFilesystem`, `seccompProfile: RuntimeDefault`).
+
+nginx, fcgiwrap and the entrypoint share that one user, so the web server can read the proxy's
+credentials (the per-repository access tokens, a PAT or the Entra access token). Limit who can
+reach the proxy — e.g. with [`k8s/components/network-policy`](k8s/components/network-policy) —
+and keep the volume private.
+
+> [!WARNING]
+> **Upgrading from 1.x:** 2.0 listens on **8080** instead of 80, and a `/repos` volume written by
+> a 1.x image must be re-owned by uid 10001 once. See [Upgrading to 2.0](docs/upgrading-to-v2.md).
+
+Please report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
 ## Guides
 
 - [Grafana Git Sync with Azure DevOps](docs/grafana.md) — sync dashboards between Grafana and an Azure DevOps repository through the proxy
+- [Upgrading to 2.0 (non-root)](docs/upgrading-to-v2.md) — port change and one-time volume ownership fix
 
 ## Troubleshooting
 

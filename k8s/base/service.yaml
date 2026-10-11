@@ -10,8 +10,8 @@ spec:
     app: git-proxy
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: http
       name: http
     - port: 8443
-      targetPort: 8443
+      targetPort: https
       name: https
