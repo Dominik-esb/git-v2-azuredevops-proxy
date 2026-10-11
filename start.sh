@@ -9,6 +9,8 @@ SYNC_INTERVAL="${SYNC_INTERVAL:-60}"
 GIT_PROXY_AUTH="${GIT_PROXY_AUTH:-basic}"
 HTTP_PORT="${HTTP_PORT:-8080}"
 HTTPS_PORT="${HTTPS_PORT:-8443}"
+# on (default): read-only status page at / - repo names and sync/push times, no URLs or secrets.
+STATUS_PAGE="${STATUS_PAGE:-on}"
 
 # The proxy runs unprivileged. A /repos volume created by an older, root-running image is still
 # owned by root - say how to fix that instead of failing on the first write.
@@ -191,8 +193,13 @@ case "$GIT_PROXY_AUTH" in
         ;;
     *) echo "[init] ERROR: GIT_PROXY_AUTH must be basic or none" >&2; exit 1 ;;
 esac
-export GIT_AUTH_DIRECTIVES HTTP_PORT HTTPS_PORT
-envsubst '${GIT_HTTP_BACKEND} ${GIT_AUTH_DIRECTIVES} ${HTTP_PORT} ${HTTPS_PORT}' \
+case "$STATUS_PAGE" in
+    on)  STATUS_LOCATIONS='include /etc/nginx/git-proxy-status.conf;' ;;
+    off) STATUS_LOCATIONS='' ;;
+    *) echo "[init] ERROR: STATUS_PAGE must be on or off" >&2; exit 1 ;;
+esac
+export GIT_AUTH_DIRECTIVES HTTP_PORT HTTPS_PORT STATUS_LOCATIONS
+envsubst '${GIT_HTTP_BACKEND} ${GIT_AUTH_DIRECTIVES} ${HTTP_PORT} ${HTTPS_PORT} ${STATUS_LOCATIONS}' \
     < /etc/nginx/nginx.conf.template \
     > /tmp/nginx/nginx.conf
 
@@ -239,7 +246,9 @@ setup_repo() {
         else
             git clone --mirror "$auth_url" "$repo_path"
         fi
+        record "$repo_name" sync ok
     fi
+    : > "$STATUS_DIR/$repo_name.repo"
 
     cd "$repo_path"
     git config core.protocolVersion 2
@@ -272,6 +281,12 @@ while read oldrev newrev refname; do
             || { echo "[proxy] WARN: failed to forward ${refname}" >&2; STATUS=1; }
     fi
 done
+# Status page: last forwarded push for this repo.
+if [ -d /tmp/status ]; then
+    [ "$STATUS" = 0 ] && result=ok || result=failed
+    printf '%s %s\n' "$(date +%s)" "$result" > "/tmp/status/$(basename "$PWD" .git).push"
+    /usr/local/bin/git-proxy-status || true
+fi
 exit "$STATUS"
 HOOK
     chmod +x hooks/post-receive
@@ -295,6 +310,13 @@ HOOK
 
     echo "[init]   ready"
 }
+
+# ── Status page state (see /usr/local/bin/git-proxy-status) ──────────────────
+STATUS_DIR=/tmp/status
+rm -rf "$STATUS_DIR" && mkdir -p "$STATUS_DIR"
+printf 'version=%s\nstarted=%s\nsync_interval=%s\nupstream_auth=%s\n' \
+    "${GIT_PROXY_VERSION:-dev}" "$(date +%s)" "$SYNC_INTERVAL" "$UPSTREAM_AUTH" > "$STATUS_DIR/meta"
+record() { printf '%s %s\n' "$(date +%s)" "$3" > "$STATUS_DIR/$1.$2"; }
 
 # ── Process repos.conf ────────────────────────────────────────────────────────
 : > /repos/.htpasswd.tmp
@@ -357,11 +379,14 @@ echo "[ready] Serving ${REPO_COUNT} repo(s) on :${HTTP_PORT} (http) and :${HTTPS
 # post-receive hook reads the same token, so it must never expire between fetches.
 TICK=$(( SYNC_INTERVAL < 60 ? SYNC_INTERVAL : 60 ))
 NEXT_SYNC=$(( $(date +%s) + SYNC_INTERVAL ))
+echo "$NEXT_SYNC" > "$STATUS_DIR/next_sync"
+git-proxy-status || true
 while true; do
     sleep "$TICK"
     ensure_entra_token || echo "[entra] WARN: keeping the previous token" >&2
     [ "$(date +%s)" -ge "$NEXT_SYNC" ] || continue
     NEXT_SYNC=$(( $(date +%s) + SYNC_INTERVAL ))
+    echo "$NEXT_SYNC" > "$STATUS_DIR/next_sync"
 
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in '#'*|'') continue ;; esac
@@ -381,8 +406,11 @@ while true; do
         if git fetch --prune origin '+refs/*:refs/*' 2>&1; then
             git update-server-info
             echo "[sync] $repo_name OK"
+            record "$repo_name" sync ok
         else
             echo "[sync] $repo_name FAILED"
+            record "$repo_name" sync failed
         fi
     done < "$REPOS_CONF"
+    git-proxy-status || true
 done

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>git-v2-proxy · Status</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='4' cy='4' r='2.5' fill='%23333'/%3E%3Ccircle cx='4' cy='12' r='2.5' fill='%23333'/%3E%3Ccircle cx='12' cy='8' r='2.5' fill='%23c2410c'/%3E%3Cpath d='M4 4v8M4 8h8' stroke='%23333' stroke-width='1.5' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <nav class="topbar">
+    <span class="brand">git-v2-proxy</span>
+    <a href="./" class="current">Status</a>
+    <a href="https://github.com/Dominik-esb/git-v2-azuredevops-proxy#readme" rel="noopener noreferrer">Help</a>
+  </nav>
+
+  <main>
+    <div class="page-head">
+      <div>
+        <h1>Status</h1>
+        <p>Sync and push activity between Azure DevOps, this proxy and its clients.</p>
+      </div>
+      <ul class="legend">
+        <li><i class="c-sync"></i>sync</li>
+        <li><i class="c-push"></i>push</li>
+        <li><i class="c-fail"></i>failed</li>
+        <li class="next" id="next-sync">next sync —</li>
+      </ul>
+    </div>
+
+    <p class="note" id="note">Loading…</p>
+
+    <div class="canvas">
+      <svg id="graph" role="img" aria-label="Data flow per repository"></svg>
+    </div>
+
+    <h2>Repositories</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Repository</th><th>Last sync</th><th>Last push</th></tr>
+        </thead>
+        <tbody id="repos"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer id="meta"></footer>
+</body>
+</html>

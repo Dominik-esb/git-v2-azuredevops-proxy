@@ -24,6 +24,7 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 - **Several repositories** per instance, each with its own generated access token
 - **Azure DevOps authentication** with a PAT, or with Microsoft Entra (workload identity or client secret) — no PAT to rotate
 - **HTTP and HTTPS**, with an auto-generated self-signed certificate or your own
+- **Status page** — a read-only page at `/` with the live data flow and per-repository sync and push times
 - **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
 - Multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
 
@@ -77,6 +78,19 @@ cp repos.conf.example repos.conf   # contains PATs: keep it secret, never commit
 docker compose up -d
 ```
 
+## Status page
+
+Open the proxy's root URL (e.g. `http://localhost:7080/`) for a read-only status page. Each
+repository is drawn as Azure DevOps → mirror → clients; an edge turns blue after a sync, orange
+after a forwarded push and red when the last one failed, labelled with how long ago it happened.
+Below that, a table lists the last sync and push of every repository. The page refreshes itself
+every few seconds.
+
+![Status page with the animated data flow and per-repository sync and push times](docs/images/status-page.jpg)
+
+The page and its data (`/status.json`) show repository names and timestamps only — no URLs,
+tokens or repository content — and need no login. Set `STATUS_PAGE=off` to disable both.
+
 ## Configuration
 
 | Variable | Default | Description |
@@ -92,6 +106,7 @@ docker compose up -d
 | `AZURE_FEDERATED_TOKEN_FILE` | — | Entra workload identity: path of the projected service account token |
 | `AZURE_CLIENT_SECRET` | — | Entra client secret. Ignored when `AZURE_FEDERATED_TOKEN_FILE` is set |
 | `AZURE_AUTHORITY_HOST` | `https://login.microsoftonline.com/` | Entra authority, for sovereign clouds |
+| `STATUS_PAGE` | `on` | `on`: read-only status page at `/` and `/status.json`. `off`: both return 404 |
 | `HTTP_PORT` | `8080` | HTTP port inside the container. Ports below 1024 only work where the runtime lets unprivileged processes bind them |
 | `HTTPS_PORT` | `8443` | HTTPS port inside the container |
 

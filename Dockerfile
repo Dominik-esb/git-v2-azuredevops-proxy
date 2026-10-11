@@ -21,11 +21,19 @@ RUN groupadd --system --gid 10001 git-proxy \
  && chown 10001:10001 /repos /etc/git-proxy
 
 COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY ui/nginx-status.conf /etc/nginx/git-proxy-status.conf
+COPY ui/nginx-status-headers.conf /etc/nginx/git-proxy-status-headers.conf
+COPY ui/index.html ui/app.js ui/style.css /usr/share/git-proxy/ui/
+COPY --chmod=755 ui/git-proxy-status /usr/local/bin/git-proxy-status
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
+# Shown on the status page; the release workflow passes the tag.
+ARG VERSION=dev
+
 # git's global config, in a writable place: there is no home directory.
-ENV GIT_CONFIG_GLOBAL=/etc/git-proxy/gitconfig \
+ENV GIT_PROXY_VERSION=$VERSION \
+    GIT_CONFIG_GLOBAL=/etc/git-proxy/gitconfig \
     HTTP_PORT=8080 \
     HTTPS_PORT=8443
 

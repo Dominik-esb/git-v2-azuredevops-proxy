@@ -54,6 +54,8 @@ http {
             fastcgi_send_timeout 600;
         }
 
+        ${STATUS_LOCATIONS}
+
         location / { return 404 "not found\n"; }
     }
 
@@ -89,6 +91,8 @@ http {
             fastcgi_read_timeout 600;
             fastcgi_send_timeout 600;
         }
+
+        ${STATUS_LOCATIONS}
 
         location / { return 404 "not found\n"; }
     }

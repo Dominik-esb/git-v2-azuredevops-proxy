@@ -91,6 +91,15 @@ got=$(git -C "$WORK/upstream/demo" -c safe.directory='*' rev-parse main)
 [ "$want" = "$got" ] || fail "push not forwarded upstream ($want != $got)"
 pass "push forwarded upstream"
 
+# ── Status page ───────────────────────────────────────────────────────────────
+code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/")
+[ "$code" = 200 ] || fail "status page: expected 200, got $code"
+status=$(curl -fsS "http://127.0.0.1:${PORT}/status.json")
+printf '%s' "$status" | grep -q '"name":"demo","last_sync":[0-9]*,"sync_ok":true,"last_push":[0-9]*,"push_ok":true' \
+    || fail "status.json does not show the sync and the forwarded push: $status"
+printf '%s' "$status" | grep -q 'unused-pat\|file://\|/upstream/' && fail "status.json leaks the upstream URL or PAT"
+pass "status page shows sync and push, without URLs or credentials"
+
 # ── Upstream changes are synced back ──────────────────────────────────────────
 git_ -C "$WORK/seed" pull -q origin main
 echo upstream > "$WORK/seed/upstream.txt"
