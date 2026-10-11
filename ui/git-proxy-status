@@ -1,0 +1,44 @@
+#!/bin/sh
+# Builds /tmp/status/status.json for the status page from the small state files that start.sh
+# (sync results) and the post-receive hook (push results) write. Called after every sync and
+# every forwarded push. Contains no URLs or credentials - only repo names and timestamps.
+#
+#   <name>.repo   one per configured repo
+#   <name>.sync   "<epoch> ok|failed"   last background fetch
+#   <name>.push   "<epoch> ok|failed"   last push forwarded to Azure DevOps
+#   meta          key=value lines written once at startup
+#   next_sync     epoch of the next background fetch
+set -u
+DIR=/tmp/status
+[ -d "$DIR" ] || exit 0
+
+json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+meta() { sed -n "s/^$1=//p" "$DIR/meta" 2>/dev/null | head -1; }
+# Prints "<epoch>,<true|false>" from a state file, or "null,null" when it doesn't exist yet.
+state() {
+    if [ -s "$1" ]; then
+        read -r at result < "$1"
+        if [ "$result" = ok ]; then echo "${at:-null},true"; else echo "${at:-null},false"; fi
+    else
+        echo "null,null"
+    fi
+}
+
+tmp="$DIR/.status.json.$$"
+{
+    started=$(meta started); interval=$(meta sync_interval); next=$(cat "$DIR/next_sync" 2>/dev/null)
+    printf '{"generated":%s,"version":"%s","started":%s,"sync_interval":%s,"next_sync":%s,"upstream_auth":"%s","repos":[' \
+        "$(date +%s)" "$(json_str "$(meta version)")" "${started:-null}" "${interval:-null}" \
+        "${next:-null}" "$(json_str "$(meta upstream_auth)")"
+    sep=""
+    for f in "$DIR"/*.repo; do
+        [ -e "$f" ] || continue
+        name=$(basename "$f" .repo)
+        sync=$(state "$DIR/$name.sync")
+        push=$(state "$DIR/$name.push")
+        printf '%s{"name":"%s","last_sync":%s,"sync_ok":%s,"last_push":%s,"push_ok":%s}' \
+            "$sep" "$(json_str "$name")" "${sync%,*}" "${sync#*,}" "${push%,*}" "${push#*,}"
+        sep=","
+    done
+    printf ']}\n'
+} > "$tmp" && mv -f "$tmp" "$DIR/status.json"

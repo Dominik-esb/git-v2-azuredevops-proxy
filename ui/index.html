@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Git v2 Proxy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%230b7a75'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Git v2 Proxy</h1>
+      <p class="sub">Protocol v2 mirror for Azure DevOps · read-only status</p>
+    </div>
+    <div class="live" id="live"><span class="dot"></span><span id="live-text">Connecting…</span></div>
+  </header>
+
+  <main>
+    <section class="card flow" aria-label="Data flow">
+      <svg viewBox="0 0 720 170" role="img" aria-labelledby="flow-title">
+        <title id="flow-title">Git clients fetch from and push to the proxy; the proxy syncs from and forwards pushes to Azure DevOps</title>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+
+        <!-- Clients <-> proxy -->
+        <path class="lane lane-serve" id="lane-serve" d="M283 68 H167" marker-end="url(#arrow)"/>
+        <path class="lane lane-push" id="lane-push-in" d="M167 102 H283" marker-end="url(#arrow)"/>
+        <text class="lane-label" x="225" y="56">fetch · v2</text>
+        <text class="lane-label" x="225" y="124">push</text>
+
+        <!-- Proxy <-> Azure DevOps -->
+        <path class="lane lane-sync" id="lane-sync" d="M553 68 H437" marker-end="url(#arrow)"/>
+        <path class="lane lane-push" id="lane-push-out" d="M437 102 H553" marker-end="url(#arrow)"/>
+        <text class="lane-label" x="495" y="56">sync · v1</text>
+        <text class="lane-label" x="495" y="124">forward</text>
+
+        <g class="node">
+          <rect x="10" y="35" width="150" height="100" rx="14"/>
+          <text class="node-title" x="85" y="80">Git clients</text>
+          <text class="node-sub" x="85" y="102">Grafana · git · CI</text>
+        </g>
+
+        <g class="node node-main">
+          <rect x="285" y="25" width="150" height="120" rx="14"/>
+          <text class="node-title" x="360" y="66">Proxy</text>
+          <text class="node-sub" id="proxy-sub" x="360" y="88">mirror</text>
+          <circle class="countdown-track" cx="360" cy="117" r="10"/>
+          <circle class="countdown" id="countdown" cx="360" cy="117" r="10" pathLength="100" transform="rotate(-90 360 117)"/>
+        </g>
+
+        <g class="node">
+          <rect x="560" y="35" width="150" height="100" rx="14"/>
+          <text class="node-title" x="635" y="80">Azure DevOps</text>
+          <text class="node-sub" id="ado-sub" x="635" y="102">upstream</text>
+        </g>
+      </svg>
+      <div class="legend">
+        <span><i class="sw sync"></i>Sync from Azure DevOps</span>
+        <span><i class="sw push"></i>Push forwarded to Azure DevOps</span>
+        <span class="next" id="next-sync">Next sync —</span>
+      </div>
+    </section>
+
+    <section class="stats" aria-label="Summary">
+      <div class="card stat"><span class="label">Repositories</span><span class="value" id="stat-repos">—</span></div>
+      <div class="card stat"><span class="label">Last sync</span><span class="value" id="stat-sync">—</span></div>
+      <div class="card stat"><span class="label">Last push</span><span class="value" id="stat-push">—</span></div>
+      <div class="card stat"><span class="label">Sync interval</span><span class="value" id="stat-interval">—</span></div>
+    </section>
+
+    <section class="card" aria-label="Repositories">
+      <h2>Repositories</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Repository</th><th>Last sync</th><th>Sync</th><th>Last push</th><th>Push</th></tr>
+          </thead>
+          <tbody id="repos"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="meta">—</span>
+    <a href="https://github.com/Dominik-esb/git-v2-azuredevops-proxy" rel="noopener noreferrer">git-v2-azuredevops-proxy</a>
+  </footer>
+</body>
+</html>
