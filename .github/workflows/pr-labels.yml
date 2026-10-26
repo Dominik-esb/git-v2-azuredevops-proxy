@@ -1,27 +1,45 @@
 name: PR labels
 
-# Every pull request needs one release-notes label (see .github/release.yml).
+# Every pull request needs at least one release-notes label (see .github/release.yml); any
+# number of labels is fine.
 on:
   pull_request:
     types: [opened, reopened, synchronize, labeled, unlabeled]
 
-permissions: {}
+permissions:
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: pr-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   require-label:
     name: Release-notes label
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - name: Check labels
         env:
-          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        # Reads the PR's current labels instead of the event payload: bots like Dependabot open
+        # the PR first and add labels a moment later, so the "opened" event has none yet.
         run: |
-          for l in breaking-change enhancement bug security documentation dependencies ci chore; do
-            if printf '%s' "$LABELS" | grep -q "\"$l\""; then
-              echo "Found label: $l"
+          allowed="breaking-change enhancement bug security documentation dependencies ci chore"
+          for attempt in 1 2 3 4; do
+            labels=$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')
+            found=""
+            for l in $allowed; do
+              printf '%s\n' "$labels" | grep -qx "$l" && found="$found $l"
+            done
+            if [ -n "$found" ]; then
+              echo "Release-notes label(s):$found"
               exit 0
             fi
+            [ "$attempt" -lt 4 ] && sleep 10
           done
-          echo "::error::Add one of these labels: breaking-change, enhancement, bug, security, documentation, dependencies, ci, chore"
+          echo "::error::Add at least one of these labels: ${allowed// /, }"
           exit 1
