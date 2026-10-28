@@ -1,0 +1,6 @@
+# Artifact Hub repository metadata, pushed to the OCI registry by the release workflow.
+# After adding the repository on artifacthub.io, paste its ID below (Control Panel -> Repositories
+# -> the repository -> "Repository ID") to get the "Verified Publisher" badge.
+repositoryID: ""
+owners:
+  - name: Dominik-esb

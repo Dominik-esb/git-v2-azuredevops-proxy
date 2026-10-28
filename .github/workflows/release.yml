@@ -1,6 +1,6 @@
 name: Release
 
-# The only workflow that publishes to Docker Hub. Triggered by pushing a semver tag:
+# The only workflow that publishes: the image to Docker Hub and the Helm chart to ghcr.io.
 #   git tag v1.2.3 && git push origin v1.2.3
 on:
   push:
@@ -98,3 +98,78 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag
+
+  chart:
+    name: Publish Helm chart to GHCR
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # attach the chart to the GitHub Release
+      packages: write # push to ghcr.io
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          chart=charts/git-v2-azuredevops-proxy
+          # Chart and app share one version; the Artifact Hub image list follows it.
+          sed -i "s|image: dominikesb/git-v2-azuredevops-proxy:.*|image: dominikesb/git-v2-azuredevops-proxy:${version}|" "$chart/Chart.yaml"
+          helm package "$chart" --version "$version" --app-version "$version" --destination dist
+          echo "file=dist/git-v2-azuredevops-proxy-${version}.tgz" >> "$GITHUB_OUTPUT"
+
+      - name: Push to ghcr.io
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          FILE: ${{ steps.package.outputs.file }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          helm push "$FILE" "oci://ghcr.io/${owner}/charts"
+
+      - name: Attach to the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          FILE: ${{ steps.package.outputs.file }}
+        run: gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY"
+
+      # Artifact Hub reads repository metadata (verified publisher, owners) from the
+      # "artifacthub.io" tag. Skipped until charts/artifacthub-repo.yml has a repositoryID.
+      - name: Set up ORAS
+        if: hashFiles('charts/artifacthub-repo.yml') != ''
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+
+      - name: Push Artifact Hub metadata
+        if: hashFiles('charts/artifacthub-repo.yml') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -qE '^repositoryID: *[0-9a-f-]{36}' charts/artifacthub-repo.yml; then
+            echo "No repositoryID in charts/artifacthub-repo.yml yet - skipping."
+            exit 0
+          fi
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
+          cd charts
+          oras push "ghcr.io/${owner}/charts/git-v2-azuredevops-proxy:artifacthub.io" \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml

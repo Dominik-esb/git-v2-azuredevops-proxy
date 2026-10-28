@@ -1,0 +1,178 @@
+{{- $u := .Values.upstream }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "git-proxy.fullname" . }}
+  labels:
+    {{- include "git-proxy.labels" . | nindent 4 }}
+spec:
+  # One replica, recreated rather than rolled: the mirror lives on a ReadWriteOnce volume.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "git-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Restart the pod when the repository list or a chart-managed credential changes.
+        checksum/repos: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/credentials: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "git-proxy.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "git-proxy.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: git-proxy
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: https
+              containerPort: 8443
+          env:
+            - name: REPOS_CONF
+              value: /config/repos.conf
+            - name: SYNC_INTERVAL
+              value: {{ .Values.syncInterval | quote }}
+            - name: GIT_PROXY_AUTH
+              value: {{ .Values.proxyAuth | quote }}
+            - name: STATUS_PAGE
+              value: {{ ternary "on" "off" .Values.statusPage.enabled | quote }}
+            {{- if eq $u.auth "pat" }}
+            - name: UPSTREAM_AUTH
+              value: pat
+            - name: AZURE_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $u.pat.existingSecret | default (include "git-proxy.credentialsSecret" .) }}
+                  key: {{ ternary $u.pat.existingSecretKey "AZURE_PAT" (not (empty $u.pat.existingSecret)) }}
+            {{- else }}
+            - name: UPSTREAM_AUTH
+              value: entra
+            - name: AZURE_CLIENT_ID
+              value: {{ $u.entra.clientId | quote }}
+            - name: AZURE_TENANT_ID
+              value: {{ $u.entra.tenantId | quote }}
+            {{- with $u.entra.authorityHost }}
+            - name: AZURE_AUTHORITY_HOST
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq $u.auth "entraWorkloadIdentity" }}
+            - name: AZURE_FEDERATED_TOKEN_FILE
+              value: /var/run/secrets/azure/tokens/azure-identity-token
+            {{- else }}
+            - name: AZURE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $u.entra.clientSecret.existingSecret | default (include "git-proxy.credentialsSecret" .) }}
+                  key: {{ ternary $u.entra.clientSecret.existingSecretKey "AZURE_CLIENT_SECRET" (not (empty $u.entra.clientSecret.existingSecret)) }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: repos-data
+              mountPath: /repos
+            - name: repos-conf
+              mountPath: /config
+              readOnly: true
+            # The only other writable paths (readOnlyRootFilesystem): generated config, TLS
+            # certificate and Entra token; nginx and fcgiwrap runtime files.
+            - name: config
+              mountPath: /etc/git-proxy
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.tls.existingSecret }}
+            - name: tls
+              mountPath: /etc/git-proxy/tls
+              readOnly: true
+            {{- end }}
+            {{- if eq $u.auth "entraWorkloadIdentity" }}
+            - name: azure-identity-token
+              mountPath: /var/run/secrets/azure/tokens
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: repos-data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "git-proxy.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: repos-conf
+          configMap:
+            name: {{ include "git-proxy.fullname" . }}-repos
+        - name: config
+          emptyDir: {}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ .Values.tmpSizeLimit }}
+        {{- with .Values.tls.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ . }}
+        {{- end }}
+        {{- if eq $u.auth "entraWorkloadIdentity" }}
+        - name: azure-identity-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: azure-identity-token
+                  # Must match the federated credential's audience, or AADSTS70021.
+                  audience: {{ $u.entra.workloadIdentity.audience }}
+                  expirationSeconds: 3600
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

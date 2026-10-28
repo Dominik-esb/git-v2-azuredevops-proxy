@@ -1,0 +1,41 @@
+apiVersion: v2
+name: git-v2-azuredevops-proxy
+description: Git protocol v2 proxy for Azure DevOps - serves v2 clones and fetches from a mirror and forwards pushes
+type: application
+# Set from the release tag by .github/workflows/release.yml; chart and app share one version.
+version: 2.0.0
+appVersion: "2.0.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/Dominik-esb/git-v2-azuredevops-proxy
+sources:
+  - https://github.com/Dominik-esb/git-v2-azuredevops-proxy
+keywords:
+  - azure-devops
+  - git
+  - git-protocol-v2
+  - proxy
+  - grafana
+  - entra-id
+  - workload-identity
+maintainers:
+  - name: Dominik-esb
+    url: https://github.com/Dominik-esb
+annotations:
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/license: MIT
+  artifacthub.io/operator: "false"
+  artifacthub.io/containsSecurityUpdates: "false"
+  artifacthub.io/links: |
+    - name: Source
+      url: https://github.com/Dominik-esb/git-v2-azuredevops-proxy
+    - name: Documentation
+      url: https://github.com/Dominik-esb/git-v2-azuredevops-proxy#readme
+    - name: Docker Hub
+      url: https://hub.docker.com/r/dominikesb/git-v2-azuredevops-proxy
+  # Rewritten for each release by .github/workflows/release.yml.
+  artifacthub.io/images: |
+    - name: git-v2-azuredevops-proxy
+      image: dominikesb/git-v2-azuredevops-proxy:2.0.0
+      platforms:
+        - linux/amd64
+        - linux/arm64

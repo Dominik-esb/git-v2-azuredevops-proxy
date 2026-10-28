@@ -1,0 +1,15 @@
+repos:
+  - https://dev.azure.com/example/project/_git/dashboards
+upstream:
+  auth: pat
+  pat:
+    value: not-a-real-pat
+gateway:
+  httpRoute:
+    enabled: true
+    parentRefs:
+      - name: shared-gateway
+        namespace: gateway-system
+        sectionName: https
+    hostnames:
+      - git.example.com

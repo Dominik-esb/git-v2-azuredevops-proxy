@@ -1,0 +1,13 @@
+{{- include "git-proxy.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "git-proxy.fullname" . }}-repos
+  labels:
+    {{- include "git-proxy.labels" . | nindent 4 }}
+data:
+  # URLs only - the credential comes from the environment (AZURE_PAT or Entra).
+  repos.conf: |
+    {{- range .Values.repos }}
+    {{ . }}
+    {{- end }}

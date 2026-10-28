@@ -1,0 +1,80 @@
+name: Helm chart
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHART: charts/git-v2-azuredevops-proxy
+  GATEWAY_API_VERSION: v1.6.3
+
+jobs:
+  lint:
+    name: Chart lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Lint and validate every values file
+        shell: bash
+        run: |
+          set -euo pipefail
+          for values in "$CHART"/ci/*-values.yaml; do
+            echo "::group::$(basename "$values")"
+            helm lint --strict "$CHART" -f "$values"
+            # Core resources against the Kubernetes schemas; the Gateway API CRDs are validated
+            # by the API server in the install job.
+            helm template ci "$CHART" -f "$values" \
+              | docker run -i --rm ghcr.io/yannh/kubeconform:v0.8.0 -strict -summary \
+                  -skip ListenerSet,HTTPRoute -
+            echo "::endgroup::"
+          done
+
+  install:
+    name: Chart install (kind, Pod Security restricted)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Create kind cluster
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: chart-test
+
+      - name: Install Gateway API CRDs
+        run: |
+          kubectl apply --server-side -f \
+            "https://github.com/kubernetes-sigs/gateway-api/releases/download/${GATEWAY_API_VERSION}/standard-install.yaml"
+          kubectl wait --for condition=Established --timeout=60s \
+            crd/listenersets.gateway.networking.k8s.io crd/httproutes.gateway.networking.k8s.io
+
+      - name: Build the image and load it into kind
+        run: |
+          docker build -t "dominikesb/git-v2-azuredevops-proxy:ci" .
+          kind load docker-image "dominikesb/git-v2-azuredevops-proxy:ci" --name chart-test
+
+      - name: Install every values file into a restricted namespace
+        run: tests/chart-install.sh kind-chart-test ci
