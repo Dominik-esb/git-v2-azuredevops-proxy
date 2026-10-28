@@ -1,0 +1,27 @@
+git-v2-azuredevops-proxy is mirroring {{ len .Values.repos }} {{ ternary "repository" "repositories" (eq (len .Values.repos) 1) }}:
+{{- range .Values.repos }}
+  - {{ . }}  ->  /{{ base . }}.git
+{{- end }}
+
+In-cluster URL:
+  http://{{ include "git-proxy.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if ne (int .Values.service.port) 80 }}:{{ .Values.service.port }}{{ end }}/<repo-name>.git
+{{- if eq .Values.proxyAuth "basic" }}
+
+Access tokens (user name = repository name) are printed to the log once the mirrors are ready:
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "git-proxy.fullname" . }} | grep -A{{ add (len .Values.repos) 3 }} '\[credentials\]'
+{{- else }}
+
+WARNING: proxyAuth=none - anyone who can reach this Service can push to Azure DevOps as the
+proxy's identity.{{ if not .Values.networkPolicy.enabled }} Enable networkPolicy to restrict who can reach it.{{ end }}
+{{- end }}
+{{- if .Values.statusPage.enabled }}
+
+Status page:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "git-proxy.fullname" . }} 8080:{{ .Values.service.port }}
+  then open http://localhost:8080/
+{{- end }}
+{{- if eq .Values.upstream.auth "entraWorkloadIdentity" }}
+
+Workload identity: the federated credential's subject must be
+  system:serviceaccount:{{ .Release.Namespace }}:{{ include "git-proxy.serviceAccountName" . }}
+{{- end }}

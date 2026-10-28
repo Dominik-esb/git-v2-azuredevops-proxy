@@ -25,6 +25,7 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 - **Azure DevOps authentication** with a PAT, or with Microsoft Entra (workload identity or client secret) — no PAT to rotate
 - **HTTP and HTTPS**, with an auto-generated self-signed certificate or your own
 - **Status page** — a read-only page at `/` with the live data flow and per-repository sync and push times
+- **Helm chart** on ghcr.io — Gateway API (HTTPRoute, ListenerSet) and Ingress, Pod Security `restricted`
 - **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
 - Multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
 
@@ -70,6 +71,8 @@ repository name, so `…/_git/repo1` is served at `/repo1.git`:
 https://dev.azure.com/myorg/myproject/_git/repo1  pat1here
 https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 ```
+
+A line without a PAT uses `AZURE_PAT`, so one PAT can serve several repositories.
 
 With [`docker-compose.yml`](docker-compose.yml):
 
@@ -144,6 +147,21 @@ To use your own certificate, mount `tls.crt` and `tls.key` into `/etc/git-proxy/
 commented lines in [`docker-compose.yml`](docker-compose.yml)).
 
 ## Kubernetes
+
+### Helm
+
+```bash
+helm install git-proxy oci://ghcr.io/dominik-esb/charts/git-v2-azuredevops-proxy \
+  --namespace git-proxy --create-namespace \
+  --set 'repos[0]=https://dev.azure.com/<org>/<project>/_git/<repo>' \
+  --set upstream.pat.value=<pat>
+```
+
+The chart supports all three authentication methods, several repositories, Gateway API
+(an HTTPRoute, or its own ListenerSet on a shared Gateway) and Ingress, and meets Pod Security
+`restricted`. See the [chart README](charts/git-v2-azuredevops-proxy/README.md) for every option.
+
+### Kustomize
 
 [`k8s/`](k8s) is a kustomize base with one overlay per authentication method. The Deployment
 lives in the base; each overlay only adds its credential.

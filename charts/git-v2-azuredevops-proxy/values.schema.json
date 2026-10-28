@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "repos",
+    "upstream"
+  ],
+  "properties": {
+    "repos": {
+      "type": "array",
+      "description": "Azure DevOps repository URLs to mirror",
+      "items": {
+        "type": "string",
+        "pattern": "^https://\\S+/_git/[^/\\s]+$"
+      }
+    },
+    "syncInterval": {
+      "type": "integer",
+      "minimum": 5,
+      "description": "Seconds between background fetches"
+    },
+    "proxyAuth": {
+      "type": "string",
+      "enum": [
+        "basic",
+        "none"
+      ]
+    },
+    "statusPage": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "upstream": {
+      "type": "object",
+      "required": [
+        "auth"
+      ],
+      "properties": {
+        "auth": {
+          "type": "string",
+          "enum": [
+            "pat",
+            "entraWorkloadIdentity",
+            "entraClientSecret"
+          ]
+        },
+        "pat": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string"
+            },
+            "existingSecret": {
+              "type": "string"
+            },
+            "existingSecretKey": {
+              "type": "string"
+            }
+          }
+        },
+        "entra": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "string"
+            },
+            "tenantId": {
+              "type": "string"
+            },
+            "authorityHost": {
+              "type": "string"
+            },
+            "clientSecret": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "existingSecret": {
+                  "type": "string"
+                },
+                "existingSecretKey": {
+                  "type": "string"
+                }
+              }
+            },
+            "workloadIdentity": {
+              "type": "object",
+              "properties": {
+                "audience": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ]
+        },
+        "port": {
+          "type": "integer"
+        },
+        "httpsPort": {
+          "type": "integer"
+        }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "existingClaim": {
+          "type": "string"
+        },
+        "storageClass": {
+          "type": "string"
+        },
+        "size": {
+          "type": "string"
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "from": {
+          "type": "array"
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "httpRoute": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "parentRefs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ]
+              }
+            },
+            "hostnames": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeouts": {
+              "type": "object"
+            },
+            "annotations": {
+              "type": "object"
+            }
+          }
+        },
+        "listenerSet": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "parentRef": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "namespace": {
+                  "type": "string"
+                }
+              }
+            },
+            "listeners": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "port",
+                  "protocol"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "hostname": {
+                    "type": "string"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "HTTP",
+                      "HTTPS"
+                    ]
+                  }
+                }
+              }
+            },
+            "annotations": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

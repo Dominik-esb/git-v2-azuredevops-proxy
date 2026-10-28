@@ -10,3 +10,4 @@ tests
 .env.*
 repos.conf
 .DS_Store
+charts

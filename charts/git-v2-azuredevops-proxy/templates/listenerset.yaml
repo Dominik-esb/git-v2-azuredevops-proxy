@@ -1,0 +1,32 @@
+{{- with .Values.gateway.listenerSet }}
+{{- if .enabled }}
+{{- if not .parentRef.name }}
+{{- fail "gateway.listenerSet.enabled: set gateway.listenerSet.parentRef.name to the Gateway to attach to" }}
+{{- end }}
+{{- if not .listeners }}
+{{- fail "gateway.listenerSet.enabled: set at least one listener in gateway.listenerSet.listeners" }}
+{{- end }}
+# Adds this proxy's listener(s) to an existing, shared Gateway without editing it. The Gateway must
+# allow it: spec.allowedListeners.namespaces.from = Same, All or Selector (Gateway API >= v1.5).
+apiVersion: gateway.networking.k8s.io/v1
+kind: ListenerSet
+metadata:
+  name: {{ include "git-proxy.fullname" $ }}
+  labels:
+    {{- include "git-proxy.labels" $ | nindent 4 }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRef:
+    group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ .parentRef.name }}
+    {{- with .parentRef.namespace }}
+    namespace: {{ . }}
+    {{- end }}
+  listeners:
+    {{- toYaml .listeners | nindent 4 }}
+{{- end }}
+{{- end }}
