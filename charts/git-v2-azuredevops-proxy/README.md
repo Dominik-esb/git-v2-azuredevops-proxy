@@ -1,5 +1,7 @@
 # git-v2-azuredevops-proxy
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/git-v2-azuredevops-proxy)](https://artifacthub.io/packages/search?repo=git-v2-azuredevops-proxy)
+
 A Git Smart HTTP server with **protocol v2** in front of Azure DevOps, which only speaks protocol
 v1. It mirrors your repositories, serves clones and fetches with protocol v2, and forwards pushes
 to Azure DevOps — for example so that [Grafana Git Sync](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/blob/main/docs/grafana.md)
