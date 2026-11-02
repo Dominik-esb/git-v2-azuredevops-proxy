@@ -1,0 +1,15 @@
+repos:
+  - https://dev.azure.com/example/project/_git/dashboards
+upstream:
+  auth: pat
+  pat:
+    existingSecret: my-pat
+gateway:
+  listenerSet:
+    enabled: true
+    parentRef:
+      name: shared-gateway
+      namespace: gateway-system
+  httpRoute:
+    timeouts:
+      request: 600s

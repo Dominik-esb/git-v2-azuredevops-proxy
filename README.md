@@ -25,6 +25,7 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 - **Azure DevOps authentication** with a PAT, or with Microsoft Entra (workload identity or client secret) — no PAT to rotate
 - **HTTP and HTTPS**, with an auto-generated self-signed certificate or your own
 - **Status page** — a read-only page at `/` with the live data flow and per-repository sync and push times
+- **Helm chart** on ghcr.io — Gateway API (HTTPRoute, ListenerSet) and Ingress, Pod Security `restricted`
 - **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
 - Multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
 
@@ -70,6 +71,8 @@ repository name, so `…/_git/repo1` is served at `/repo1.git`:
 https://dev.azure.com/myorg/myproject/_git/repo1  pat1here
 https://dev.azure.com/myorg/myproject/_git/repo2  pat2here
 ```
+
+A line without a PAT uses `AZURE_PAT`, so one PAT can serve several repositories.
 
 With [`docker-compose.yml`](docker-compose.yml):
 
@@ -145,6 +148,21 @@ commented lines in [`docker-compose.yml`](docker-compose.yml)).
 
 ## Kubernetes
 
+### Helm
+
+```bash
+helm install git-proxy oci://ghcr.io/dominik-esb/charts/git-v2-azuredevops-proxy \
+  --namespace git-proxy --create-namespace \
+  --set 'repos[0]=https://dev.azure.com/<org>/<project>/_git/<repo>' \
+  --set upstream.pat.value=<pat>
+```
+
+The chart supports all three authentication methods, several repositories, Gateway API
+(an HTTPRoute, or its own ListenerSet on a shared Gateway) and Ingress, and meets Pod Security
+`restricted`. See the [chart README](charts/git-v2-azuredevops-proxy/README.md) for every option.
+
+### Kustomize
+
 [`k8s/`](k8s) is a kustomize base with one overlay per authentication method. The Deployment
 lives in the base; each overlay only adds its credential.
 
@@ -155,12 +173,18 @@ lives in the base; each overlay only adds its credential.
 | [`k8s/entra-workload-identity`](k8s/entra-workload-identity) | Adds a ServiceAccount, the projected token and the workload identity variables |
 | [`k8s/entra-client-secret`](k8s/entra-client-secret) | Adds the Entra variables and `AZURE_CLIENT_SECRET` from a Secret |
 | [`k8s/components/network-policy`](k8s/components/network-policy) | Optional: admits traffic only from Grafana pods. Recommended with `GIT_PROXY_AUTH=none` |
+| [`k8s/components/gateway-listenerset`](k8s/components/gateway-listenerset) | Optional, Gateway API ≥ v1.5: a ListenerSet with the proxy's own hostname and TLS certificate on a shared Gateway, plus its HTTPRoute |
+| [`k8s/components/gateway-httproute`](k8s/components/gateway-httproute) | Optional, Gateway API: an HTTPRoute on a listener of an existing Gateway |
 
 ```bash
 # 1. Set AZURE_DEVOPS_URL (and the image tag, if needed) in k8s/base/deployment.yaml
 # 2. Fill in the overlay's secret.yaml or <client-id>/<tenant-id> — see its kustomization.yaml
 kubectl apply -k k8s/pat      # or k8s/entra-workload-identity, k8s/entra-client-secret
 ```
+
+Components are enabled in the overlay's `kustomization.yaml` (`components: [../components/…]`);
+each component's `kustomization.yaml` lists what to fill in. For a ListenerSet, the shared
+Gateway has to allow it once with `spec.allowedListeners.namespaces.from`.
 
 For several repositories, mount a `repos.conf` Secret outside `/etc/git-proxy` and point
 `REPOS_CONF` at it. The proxy writes its certificate and Entra token to `/etc/git-proxy`, so that

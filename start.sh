@@ -329,7 +329,12 @@ while IFS= read -r line || [ -n "$line" ]; do
     url=$(printf '%s' "$line" | awk '{print $1}')
     pat=$(printf '%s' "$line" | awk '{print $2}')
     [ -z "$url" ] && continue
-    [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ] && continue
+    # A line without its own PAT uses AZURE_PAT, so one PAT can serve several repos.
+    [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ] && pat="${AZURE_PAT:-}"
+    if [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ]; then
+        echo "[init] WARNING: $(basename "$url"): no PAT in $REPOS_CONF and AZURE_PAT is not set - skipped" >&2
+        continue
+    fi
     if [ "$UPSTREAM_AUTH" = entra ] && [ -n "$pat" ] && [ "$pat" != "-" ]; then
         echo "[init] WARNING: $(basename "$url"): ignoring the PAT in $REPOS_CONF - upstream auth is" \
              "Entra. Set UPSTREAM_AUTH=pat to use the PAT instead." >&2
@@ -393,6 +398,7 @@ while true; do
         url=$(printf '%s' "$line" | awk '{print $1}')
         pat=$(printf '%s' "$line" | awk '{print $2}')
         [ -z "$url" ] && continue
+        [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ] && pat="${AZURE_PAT:-}"
         [ "$UPSTREAM_AUTH" = pat ] && [ -z "$pat" ] && continue
 
         repo_name=$(basename "$url")

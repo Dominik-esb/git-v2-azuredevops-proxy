@@ -32,7 +32,11 @@ CI also runs these linters; running them locally before you push saves a round t
 | [shellcheck](https://www.shellcheck.net/) | `start.sh`, `tests/*.sh` |
 | [hadolint](https://github.com/hadolint/hadolint) | `Dockerfile` |
 | [actionlint](https://github.com/rhysd/actionlint) | `.github/workflows/` |
-| [kubeconform](https://github.com/yannh/kubeconform) | every rendered kustomize overlay in `k8s/` |
+| [kubeconform](https://github.com/yannh/kubeconform) | every rendered kustomize overlay in `k8s/` and the Helm chart |
+| `helm lint --strict` | the chart, with every values file in `charts/*/ci/` |
+
+The Helm chart is also installed into a kind cluster whose namespace enforces Pod Security
+`restricted` (`tests/chart-install.sh <kube-context>`).
 
 ## Pull requests
 
@@ -69,5 +73,6 @@ git push origin v1.2.3
 
 The [Release workflow](.github/workflows/release.yml) runs the smoke test, pushes `1.2.3`, `1.2`,
 `1` and `latest` to [Docker Hub](https://hub.docker.com/r/dominikesb/git-v2-azuredevops-proxy)
-(multi-arch, with SBOM and provenance) and creates a GitHub Release whose notes are grouped by
-the labels above. Bump the major version for anything labelled `breaking-change`.
+(multi-arch, with SBOM and provenance), creates a GitHub Release whose notes are grouped by
+the labels above, and pushes the Helm chart with the same version to
+`oci://ghcr.io/dominik-esb/charts`, where [Artifact Hub](https://artifacthub.io) picks it up. Bump the major version for anything labelled `breaking-change`.

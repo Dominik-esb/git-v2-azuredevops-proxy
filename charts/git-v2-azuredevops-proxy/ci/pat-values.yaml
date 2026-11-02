@@ -1,0 +1,7 @@
+repos:
+  - https://dev.azure.com/example/project/_git/dashboards
+  - https://dev.azure.com/example/project/_git/alerting-rules
+upstream:
+  auth: pat
+  pat:
+    value: not-a-real-pat

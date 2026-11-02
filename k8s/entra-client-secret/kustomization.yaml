@@ -19,9 +19,13 @@ resources:
   - ../base
   - secret.yaml
 
-# Optional: only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+# Optional components - uncomment what you need:
+#   network-policy:      only admit traffic from Grafana. Required in practice with GIT_PROXY_AUTH=none.
+#   gateway-listenerset: Gateway API - the proxy's own listener (hostname, TLS) on a shared Gateway.
+#   gateway-httproute:   Gateway API - an HTTPRoute on an existing Gateway listener.
 # components:
 #   - ../components/network-policy
+#   - ../components/gateway-listenerset
 
 # Inline JSON patches rather than a partial Deployment file, so file-by-file scanners (Trivy) do not
 # mistake the patch for a complete, insecure Deployment.

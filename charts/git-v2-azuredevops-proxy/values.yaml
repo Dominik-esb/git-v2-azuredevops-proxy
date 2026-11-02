@@ -1,0 +1,177 @@
+# -- Azure DevOps repositories to mirror. Each one is served at /<repo-name>.git.
+# Required. Example:
+#   repos:
+#     - https://dev.azure.com/myorg/myproject/_git/grafana-dashboards
+repos: []
+
+# -- Seconds between background fetches from Azure DevOps.
+syncInterval: 60
+
+# -- Authentication on the proxy's git endpoints.
+# basic: a generated access token per repository, printed to the pod log (user name = repo name).
+# none: no authentication - anyone who can reach the Service can push to Azure DevOps as the
+#       proxy's identity. Only use it together with networkPolicy.enabled.
+proxyAuth: basic
+
+# -- Read-only status page at / (repository names and sync/push times only).
+statusPage:
+  enabled: true
+
+# How the proxy authenticates to Azure DevOps.
+upstream:
+  # -- pat, entraWorkloadIdentity or entraClientSecret.
+  auth: pat
+
+  # Personal Access Token with Code -> Read & Write. Set `value` to let the chart create a Secret,
+  # or `existingSecret` to use your own.
+  pat:
+    value: ""
+    existingSecret: ""
+    existingSecretKey: AZURE_PAT
+
+  # Microsoft Entra (both entra* modes). The identity needs Contribute on the repositories.
+  entra:
+    clientId: ""
+    tenantId: ""
+    # -- Only for sovereign clouds, e.g. https://login.microsoftonline.us/
+    authorityHost: ""
+    # entraClientSecret: the app registration's client secret.
+    clientSecret:
+      value: ""
+      existingSecret: ""
+      existingSecretKey: AZURE_CLIENT_SECRET
+    # entraWorkloadIdentity: the chart projects a service account token with this audience.
+    # Create a federated credential for system:serviceaccount:<namespace>:<service account name>.
+    workloadIdentity:
+      audience: api://AzureADTokenExchange
+
+image:
+  repository: dominikesb/git-v2-azuredevops-proxy
+  # -- Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Always created for entraWorkloadIdentity, whose federated credential names it.
+  create: true
+  name: ""
+  annotations: {}
+
+service:
+  type: ClusterIP
+  # -- Service port for HTTP; the container listens on 8080.
+  port: 80
+  # -- Service port for HTTPS (self-signed unless tls.existingSecret is set).
+  httpsPort: 8443
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: git-proxy.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Gateway API (gateway.networking.k8s.io/v1). Use instead of, or next to, ingress.
+gateway:
+  # -- HTTPRoute to the proxy. Created automatically when listenerSet is enabled.
+  httpRoute:
+    enabled: false
+    # -- Gateways or ListenerSets to attach to, e.g. [{name: shared-gateway, namespace: gateway-system}].
+    # The chart's own ListenerSet is added automatically when listenerSet.enabled.
+    parentRefs: []
+    # -- Defaults to the hostnames of listenerSet.listeners.
+    hostnames: []
+    # -- HTTPRoute timeouts, e.g. {request: 600s}. Large clones and pushes can take minutes.
+    timeouts: {}
+    annotations: {}
+  # ListenerSet (Gateway API >= v1.5): adds this proxy's own listener - hostname, port and TLS
+  # certificate - to an existing shared Gateway without editing it. The Gateway has to allow it
+  # with spec.allowedListeners.namespaces.from set to Same, All or Selector.
+  listenerSet:
+    enabled: false
+    parentRef:
+      # -- Name of the shared Gateway.
+      name: ""
+      # -- Namespace of the Gateway; defaults to the release namespace.
+      namespace: ""
+    listeners:
+      - name: https
+        hostname: git-proxy.example.com
+        port: 443
+        protocol: HTTPS
+        tls:
+          mode: Terminate
+          certificateRefs:
+            - name: git-proxy-tls
+    annotations: {}
+
+# -- Name of a kubernetes.io/tls Secret to serve HTTPS with, instead of the self-signed certificate.
+tls:
+  existingSecret: ""
+
+persistence:
+  # -- Keep the mirrors and the generated access tokens across restarts. Without it, every pod
+  # start clones again and generates new tokens.
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 10Gi
+  annotations: {}
+
+networkPolicy:
+  # -- Admit traffic only from the pods below. Strongly recommended with proxyAuth: none.
+  enabled: false
+  # -- Allowed peers. Default: Grafana pods in any namespace.
+  from:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: grafana
+
+# -- Size limit for /tmp, where nginx buffers push uploads.
+tmpSizeLimit: 1Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Extra environment variables for the proxy container.
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []

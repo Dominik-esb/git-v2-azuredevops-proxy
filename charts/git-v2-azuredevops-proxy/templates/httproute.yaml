@@ -1,0 +1,47 @@
+{{- $gw := .Values.gateway }}
+{{- if or $gw.httpRoute.enabled $gw.listenerSet.enabled }}
+{{- if and (not $gw.httpRoute.parentRefs) (not $gw.listenerSet.enabled) }}
+{{- fail "gateway.httpRoute.enabled: set gateway.httpRoute.parentRefs, or enable gateway.listenerSet" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "git-proxy.fullname" . }}
+  labels:
+    {{- include "git-proxy.labels" . | nindent 4 }}
+  {{- with $gw.httpRoute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- if $gw.listenerSet.enabled }}
+    # The ListenerSet this chart creates.
+    - group: gateway.networking.k8s.io
+      kind: ListenerSet
+      name: {{ include "git-proxy.fullname" . }}
+    {{- end }}
+    {{- with $gw.httpRoute.parentRefs }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- $hosts := $gw.httpRoute.hostnames }}
+  {{- if and (not $hosts) $gw.listenerSet.enabled }}
+  {{- range $gw.listenerSet.listeners }}{{ with .hostname }}{{ $hosts = append $hosts . }}{{ end }}{{ end }}
+  {{- end }}
+  {{- with $hosts }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "git-proxy.fullname" . }}
+          port: {{ .Values.service.port }}
+      {{- with $gw.httpRoute.timeouts }}
+      timeouts:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

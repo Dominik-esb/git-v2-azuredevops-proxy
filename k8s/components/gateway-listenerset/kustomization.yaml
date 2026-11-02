@@ -1,0 +1,20 @@
+# Optional: expose the proxy through Gateway API with its own ListenerSet (Gateway API >= v1.5).
+# The ListenerSet adds this proxy's listener - hostname, port and TLS certificate - to an existing
+# shared Gateway without editing it, and the HTTPRoute attaches to that listener. Add it to an
+# overlay with `components: [../components/gateway-listenerset]`. Not deployable alone.
+#
+# Before applying:
+#   1. The shared Gateway must allow ListenerSets (platform team, once):
+#        spec:
+#          allowedListeners:
+#            namespaces:
+#              from: All        # or Same, or Selector
+#   2. Fill in <gateway-name>, <gateway-namespace> and the hostname in listenerset.yaml, and the
+#      same hostname in httproute.yaml.
+#   3. Create the TLS Secret git-proxy-tls in the proxy's namespace (e.g. with cert-manager).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - listenerset.yaml
+  - httproute.yaml

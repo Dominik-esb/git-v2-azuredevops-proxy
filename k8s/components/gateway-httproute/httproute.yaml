@@ -1,0 +1,24 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: git-proxy
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: <gateway-name>
+      namespace: <gateway-namespace>
+      sectionName: <listener-name>
+  hostnames:
+    - git-proxy.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: git-proxy
+          port: 80
+      # Large clones and pushes can take minutes.
+      timeouts:
+        request: 600s
