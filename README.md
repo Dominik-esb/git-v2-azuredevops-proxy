@@ -4,6 +4,7 @@
 [![Security](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/security.yml/badge.svg)](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/actions/workflows/security.yml)
 [![Release](https://img.shields.io/github/v/release/Dominik-esb/git-v2-azuredevops-proxy?logo=github)](https://github.com/Dominik-esb/git-v2-azuredevops-proxy/releases/latest)
 [![Docker Pulls](https://img.shields.io/docker/pulls/dominikesb/git-v2-azuredevops-proxy?logo=docker)](https://hub.docker.com/r/dominikesb/git-v2-azuredevops-proxy)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/git-v2-azuredevops-proxy)](https://artifacthub.io/packages/search?repo=git-v2-azuredevops-proxy)
 [![License](https://img.shields.io/github/license/Dominik-esb/git-v2-azuredevops-proxy)](LICENSE)
 
 A Git Smart HTTP server with **protocol v2** in front of Azure DevOps, which only speaks protocol v1.
