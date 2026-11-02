@@ -1,0 +1,12 @@
+# Optional: expose the proxy through Gateway API by attaching an HTTPRoute to a listener of an
+# existing Gateway. Use ../gateway-listenerset instead to bring the proxy's own listener and
+# certificate. Add it to an overlay with `components: [../components/gateway-httproute]`.
+# Not deployable alone.
+#
+# Fill in <gateway-name>, <gateway-namespace>, <listener-name> and the hostname in httproute.yaml.
+# The Gateway's listener must allow routes from the proxy's namespace (allowedRoutes).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - httproute.yaml

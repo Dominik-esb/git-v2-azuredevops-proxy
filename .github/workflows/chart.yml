@@ -78,3 +78,21 @@ jobs:
 
       - name: Install every values file into a restricted namespace
         run: tests/chart-install.sh kind-chart-test ci
+
+      # The kustomize Gateway API components, validated by the API server against the same CRDs.
+      - name: Validate kustomize Gateway API components
+        shell: bash
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp -R k8s "$work/"
+          kubectl create namespace git-proxy
+          for c in gateway-listenerset gateway-httproute; do
+            mkdir -p "$work/k8s/test-$c"
+            printf 'apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - ../pat\ncomponents:\n  - ../components/%s\n' "$c" \
+              > "$work/k8s/test-$c/kustomization.yaml"
+            # Placeholders are not valid resource names; fill them in as a user would.
+            kubectl kustomize "$work/k8s/test-$c" \
+              | sed 's/<gateway-name>/shared-gateway/; s/<gateway-namespace>/gateway-system/; s/<listener-name>/https/' \
+              | kubectl apply --dry-run=server -f -
+          done
