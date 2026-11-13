@@ -1,0 +1,22 @@
+#!/bin/sh
+# git-proxy-sync-one <path>: fetches one mirror from Azure DevOps and records the result for the
+# status page. Run by start.sh, several at a time (SYNC_PARALLEL).
+path="$1"
+key=$(printf '%s' "$path" | tr '/' '~')
+cd "/repos/$path.git" || exit 0
+err=$(mktemp)
+if git fetch -q --prune origin 2>"$err"; then
+    # HEAD can dangle when the default branch was renamed or was empty at the first fetch.
+    git rev-parse -q --verify HEAD >/dev/null || git-proxy-set-head
+    git update-server-info
+    printf '%s ok\n' "$(date +%s)" > "/tmp/status/$key.sync"
+    rm -f "/tmp/status/$key.error"
+    echo "[sync] $path OK"
+else
+    printf '%s failed\n' "$(date +%s)" > "/tmp/status/$key.sync"
+    git-proxy-sync-error "$path" < "$err"
+    # Never log a PAT that git may echo back in a URL.
+    echo "[sync] $path FAILED: $(sed 's#//[^/@]*@#//#g' "$err" | tail -n 1)"
+fi
+rm -f "$err"
+exit 0

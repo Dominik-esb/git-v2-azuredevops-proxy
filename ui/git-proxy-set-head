@@ -1,0 +1,18 @@
+#!/bin/sh
+# git-proxy-set-head: run inside a mirror. Points HEAD at the upstream's default branch, so a
+# client clone checks out what it would get from Azure DevOps. Mirrors are created with
+# "git init" + fetch (to honour MIRROR_BRANCHES), which does not set HEAD on its own.
+ref=$(git ls-remote --symref origin HEAD 2>/dev/null | sed -n 's|^ref: \(refs/heads/[^[:space:]]*\)[[:space:]]*HEAD$|\1|p')
+if [ -n "$ref" ] && git rev-parse -q --verify "$ref" >/dev/null; then
+    git symbolic-ref HEAD "$ref"
+    exit 0
+fi
+# Default branch not mirrored (MIRROR_BRANCHES) or not reported: fall back to main, master, or
+# the first branch there is.
+for ref in refs/heads/main refs/heads/master $(git for-each-ref --count=1 --format='%(refname)' refs/heads); do
+    if git rev-parse -q --verify "$ref" >/dev/null; then
+        git symbolic-ref HEAD "$ref"
+        exit 0
+    fi
+done
+exit 0

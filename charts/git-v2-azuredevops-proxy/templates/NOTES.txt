@@ -1,14 +1,34 @@
-git-v2-azuredevops-proxy is mirroring {{ len .Values.repos }} {{ ternary "repository" "repositories" (eq (len .Values.repos) 1) }}:
-{{- range .Values.repos }}
-  - {{ . }}  ->  /{{ base . }}.git
-{{- end }}
+{{- $svc := printf "http://%s.%s.svc.cluster.local%s" (include "git-proxy.fullname" .) .Release.Namespace (ternary "" (printf ":%v" .Values.service.port) (eq (int .Values.service.port) 80)) -}}
+git-v2-azuredevops-proxy is running.
+{{- if .Values.repos }}
 
-In-cluster URL:
-  http://{{ include "git-proxy.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if ne (int .Values.service.port) 80 }}:{{ .Values.service.port }}{{ end }}/<repo-name>.git
+Configured repositories:
+{{- range .Values.repos }}
+  - {{ . }}  ->  {{ $svc }}/{{ base . }}.git
+{{- end }}
+{{- end }}
+{{- if .Values.discovery.enabled }}
+
+Discovery: every repository in {{ .Values.discovery.url }} matching
+  include {{ join ", " .Values.discovery.include }}{{ with .Values.discovery.exclude }}, exclude {{ join ", " . }}{{ end }}
+is mirrored at {{ $svc }}/<project>/<repo>.git and picked up within {{ .Values.discovery.interval }}s
+of being created. What was found and skipped (and why) is on the status page.
+{{- end }}
 {{- if eq .Values.proxyAuth "basic" }}
 
-Access tokens (user name = repository name) are printed to the log once the mirrors are ready:
-  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "git-proxy.fullname" . }} | grep -A{{ add (len .Values.repos) 3 }} '\[credentials\]'
+Access ({{ .Values.proxyToken.scope }} token{{ if ne .Values.proxyToken.scope "global" }}s{{ end }}):
+{{- if eq .Values.proxyToken.scope "global" }}
+  user name: {{ .Values.proxyToken.user }}
+{{- if or .Values.proxyToken.value .Values.proxyToken.existingSecret }}
+  token:     from Secret {{ .Values.proxyToken.existingSecret | default (include "git-proxy.credentialsSecret" .) }}, key {{ ternary .Values.proxyToken.existingSecretKey "GIT_PROXY_TOKEN" (not (empty .Values.proxyToken.existingSecret)) }}
+{{- else }}
+  token:     generated, printed to the log:
+    kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "git-proxy.fullname" . }} | grep -A6 '\[credentials\]'
+{{- end }}
+{{- else }}
+  user name = {{ ternary "repository path" "project name" (eq .Values.proxyToken.scope "repo") }}; tokens are generated and printed to the log:
+    kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "git-proxy.fullname" . }} | grep -A40 '\[credentials\]'
+{{- end }}
 {{- else }}
 
 WARNING: proxyAuth=none - anyone who can reach this Service can push to Azure DevOps as the

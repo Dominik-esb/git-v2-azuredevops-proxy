@@ -1,17 +1,56 @@
-# -- Azure DevOps repositories to mirror. Each one is served at /<repo-name>.git.
-# Required. Example:
+# -- Azure DevOps repositories to mirror, each served at /<repo-name>.git. Optional when
+# discovery is enabled. Example:
 #   repos:
 #     - https://dev.azure.com/myorg/myproject/_git/grafana-dashboards
 repos: []
 
+# Mirror every repository of an Azure DevOps organization or project that matches the filters,
+# served at /<project>/<repo>.git. New repositories are picked up on the next scan.
+discovery:
+  enabled: false
+  # -- https://dev.azure.com/<org> (all projects) or https://dev.azure.com/<org>/<project>
+  url: ""
+  # -- Patterns matched against "<project>/<repo>": shell globs, or re:<regex>. Exclude wins.
+  include: ["*"]
+  exclude: []
+  # -- Seconds between scans.
+  interval: 300
+  includeForks: false
+  includeEmpty: false
+
+# -- Seconds a repository that is no longer configured or discovered is still served before it is
+# moved to /repos/.archive (never deleted). 0: never archive.
+archiveAfter: 604800
+
+# Cost control for large repositories.
+mirror:
+  # -- Mirror only these branches, e.g. ["main", "release/*"]. Empty: every ref.
+  branches: []
+  # -- Mirror tags.
+  tags: true
+
 # -- Seconds between background fetches from Azure DevOps.
 syncInterval: 60
+# -- Repositories fetched at the same time in each sync.
+syncParallel: 4
 
 # -- Authentication on the proxy's git endpoints.
-# basic: a generated access token per repository, printed to the pod log (user name = repo name).
+# basic: generated access tokens, printed to the pod log.
 # none: no authentication - anyone who can reach the Service can push to Azure DevOps as the
 #       proxy's identity. Only use it together with networkPolicy.enabled.
 proxyAuth: basic
+
+# Which token opens which repository (proxyAuth: basic).
+proxyToken:
+  # -- repo: one token per repository (user = repo path). project: one per Azure DevOps project
+  # (user = project). global: one token for all repositories (user = `user` below).
+  scope: repo
+  user: git
+  # -- global scope only: the token, from `value` or an existing Secret, so Grafana can read it
+  # from the same Secret. Empty: generated and printed to the log.
+  value: ""
+  existingSecret: ""
+  existingSecretKey: GIT_PROXY_TOKEN
 
 # -- Read-only status page at / (repository names and sync/push times only).
 statusPage:

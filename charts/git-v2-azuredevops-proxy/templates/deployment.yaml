@@ -54,6 +54,41 @@ spec:
               value: {{ .Values.proxyAuth | quote }}
             - name: STATUS_PAGE
               value: {{ ternary "on" "off" .Values.statusPage.enabled | quote }}
+            - name: SYNC_PARALLEL
+              value: {{ .Values.syncParallel | quote }}
+            - name: ARCHIVE_AFTER
+              value: {{ .Values.archiveAfter | quote }}
+            - name: MIRROR_BRANCHES
+              value: {{ join " " .Values.mirror.branches | quote }}
+            - name: MIRROR_TAGS
+              value: {{ .Values.mirror.tags | quote }}
+            - name: GIT_PROXY_TOKEN_SCOPE
+              value: {{ .Values.proxyToken.scope | quote }}
+            - name: GIT_PROXY_USER
+              value: {{ .Values.proxyToken.user | quote }}
+            {{- if or .Values.proxyToken.value .Values.proxyToken.existingSecret }}
+            - name: GIT_PROXY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.proxyToken.existingSecret | default (include "git-proxy.credentialsSecret" .) }}
+                  key: {{ ternary .Values.proxyToken.existingSecretKey "GIT_PROXY_TOKEN" (not (empty .Values.proxyToken.existingSecret)) }}
+            {{- end }}
+            {{- with .Values.discovery }}
+            {{- if .enabled }}
+            - name: DISCOVERY_URL
+              value: {{ .url | quote }}
+            - name: DISCOVERY_INCLUDE
+              value: {{ join " " .include | quote }}
+            - name: DISCOVERY_EXCLUDE
+              value: {{ join " " .exclude | quote }}
+            - name: DISCOVERY_INTERVAL
+              value: {{ .interval | quote }}
+            - name: DISCOVERY_INCLUDE_FORKS
+              value: {{ .includeForks | quote }}
+            - name: DISCOVERY_INCLUDE_EMPTY
+              value: {{ .includeEmpty | quote }}
+            {{- end }}
+            {{- end }}
             {{- if eq $u.auth "pat" }}
             - name: UPSTREAM_AUTH
               value: pat

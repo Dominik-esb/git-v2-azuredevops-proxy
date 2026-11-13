@@ -2,7 +2,6 @@
   "$schema": "https://json-schema.org/draft-07/schema#",
   "type": "object",
   "required": [
-    "repos",
     "upstream"
   ],
   "properties": {
@@ -250,6 +249,88 @@
               "type": "object"
             }
           }
+        }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "url": {
+          "type": "string"
+        },
+        "include": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interval": {
+          "type": "integer",
+          "minimum": 30
+        },
+        "includeForks": {
+          "type": "boolean"
+        },
+        "includeEmpty": {
+          "type": "boolean"
+        }
+      }
+    },
+    "archiveAfter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "mirror": {
+      "type": "object",
+      "properties": {
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tags": {
+          "type": "boolean"
+        }
+      }
+    },
+    "syncParallel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32
+    },
+    "proxyToken": {
+      "type": "object",
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": [
+            "repo",
+            "project",
+            "global"
+          ]
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^[^:]+$"
+        },
+        "value": {
+          "type": "string"
+        },
+        "existingSecret": {
+          "type": "string"
+        },
+        "existingSecretKey": {
+          "type": "string"
         }
       }
     }

@@ -1,0 +1,16 @@
+discovery:
+  enabled: true
+  url: https://dev.azure.com/example
+  include: ["Platform/*", "re:^Observability/.*-dashboards$"]
+  exclude: ["*/archive-*"]
+upstream:
+  auth: pat
+  pat:
+    value: not-a-real-pat
+proxyToken:
+  scope: global
+  value: not-a-real-token
+mirror:
+  branches: [main]
+  tags: false
+syncParallel: 8
