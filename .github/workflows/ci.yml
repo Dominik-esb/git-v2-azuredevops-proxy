@@ -83,3 +83,6 @@ jobs:
 
       - name: Smoke test
         run: tests/smoke.sh git-proxy:test
+
+      - name: Discovery test
+        run: tests/discovery.sh git-proxy:test

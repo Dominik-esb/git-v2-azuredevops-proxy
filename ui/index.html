@@ -35,15 +35,38 @@
       <svg id="graph" role="img" aria-label="Data flow per repository"></svg>
     </div>
 
-    <h2>Repositories</h2>
+    <div class="list-head">
+      <h2>Repositories</h2>
+      <div class="tools">
+        <input id="search" type="search" placeholder="Filter by name or project" aria-label="Filter repositories" autocomplete="off">
+        <select id="state" aria-label="Show">
+          <option value="all">All</option>
+          <option value="failing">Failing</option>
+          <option value="orphaned">Going away</option>
+          <option value="pushed">Pushed recently</option>
+        </select>
+        <span class="count" id="count"></span>
+      </div>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Repository</th><th>Last sync</th><th>Last push</th></tr>
+          <tr><th>Repository</th><th>Project</th><th>Source</th><th>Last sync</th><th>Last push</th><th>Status</th></tr>
         </thead>
         <tbody id="repos"></tbody>
       </table>
     </div>
+
+    <details id="skipped-box" hidden>
+      <summary id="skipped-title">Not mirrored</summary>
+      <p class="hint">Found by discovery but not mirrored. Change DISCOVERY_INCLUDE / DISCOVERY_EXCLUDE (or the fork/empty switches) to include them.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Repository</th><th>Reason</th></tr></thead>
+          <tbody id="skipped"></tbody>
+        </table>
+      </div>
+    </details>
   </main>
 
   <footer id="meta"></footer>

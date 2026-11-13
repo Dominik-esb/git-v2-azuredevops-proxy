@@ -42,8 +42,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{/* Fails early with a readable message instead of a crash-looping pod. */}}
 {{- define "git-proxy.validate" -}}
-{{- if not .Values.repos }}
-{{- fail "repos: set at least one Azure DevOps repository URL, e.g. https://dev.azure.com/<org>/<project>/_git/<repo>" }}
+{{- if and (not .Values.repos) (not .Values.discovery.enabled) }}
+{{- fail "repos: set at least one Azure DevOps repository URL, e.g. https://dev.azure.com/<org>/<project>/_git/<repo>, or enable discovery" }}
+{{- end }}
+{{- if and .Values.discovery.enabled (not .Values.discovery.url) }}
+{{- fail "discovery.enabled: set discovery.url to https://dev.azure.com/<org> or https://dev.azure.com/<org>/<project>" }}
+{{- end }}
+{{- if not (has .Values.proxyToken.scope (list "repo" "project" "global")) }}
+{{- fail "proxyToken.scope must be repo, project or global" }}
+{{- end }}
+{{- if and (or .Values.proxyToken.value .Values.proxyToken.existingSecret) (ne .Values.proxyToken.scope "global") }}
+{{- fail "proxyToken.value / existingSecret only apply to proxyToken.scope: global" }}
 {{- end }}
 {{- $u := .Values.upstream }}
 {{- if eq $u.auth "pat" }}

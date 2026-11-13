@@ -1,0 +1,14 @@
+#!/bin/sh
+# git-proxy-sync-error <path> < git-stderr: turns a failed fetch into a short reason for the status
+# page. Categories only - the raw message can contain URLs and organization names.
+key=$(printf '%s' "$1" | tr '/' '~')
+msg=$(cat)
+case "$msg" in
+    *"Authentication failed"*|*" 401"*|*"could not read Username"*) reason="authentication failed" ;;
+    *" 403"*|*"TF401019"*|*"TF401027"*|*"permission"*) reason="access denied" ;;
+    *"not found"*|*" 404"*|*"does not appear to be a git repository"*) reason="repository not found" ;;
+    *"Could not resolve"*|*"timed out"*|*"Failed to connect"*|*"Connection refused"*) reason="Azure DevOps not reachable" ;;
+    *"certificate"*) reason="TLS certificate problem" ;;
+    *) reason="fetch failed" ;;
+esac
+printf '%s\n' "$reason" > "/tmp/status/$key.error"

@@ -1,44 +1,68 @@
 #!/bin/sh
-# Builds /tmp/status/status.json for the status page from the small state files that start.sh
-# (sync results) and the post-receive hook (push results) write. Called after every sync and
-# every forwarded push. Contains no URLs or credentials - only repo names and timestamps.
+# Builds /tmp/status/status.json for the status page. Called after every sync, discovery and
+# forwarded push. Holds repository paths, timestamps and short reasons only - no URLs or credentials.
 #
-#   <name>.repo   one per configured repo
-#   <name>.sync   "<epoch> ok|failed"   last background fetch
-#   <name>.push   "<epoch> ok|failed"   last push forwarded to Azure DevOps
-#   meta          key=value lines written once at startup
-#   next_sync     epoch of the next background fetch
+#   meta            key=value, written once at startup
+#   discovery       key=value, written by each discovery run
+#   repos.tsv       key, path, project, source (static|discovered), state (active|orphaned), orphaned_since
+#   skipped.tsv     name, reason - repositories discovery found but does not mirror
+#   <key>.sync      "<epoch> ok|failed"   last background fetch
+#   <key>.push      "<epoch> ok|failed"   last push forwarded to Azure DevOps
+#   <key>.error     reason of the last failed fetch
+#   next_sync       epoch of the next background fetch
 set -u
 DIR=/tmp/status
 [ -d "$DIR" ] || exit 0
 
-json_str() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
-meta() { sed -n "s/^$1=//p" "$DIR/meta" 2>/dev/null | head -1; }
-# Prints "<epoch>,<true|false>" from a state file, or "null,null" when it doesn't exist yet.
-state() {
-    if [ -s "$1" ]; then
-        read -r at result < "$1"
-        if [ "$result" = ok ]; then echo "${at:-null},true"; else echo "${at:-null},false"; fi
-    else
-        echo "null,null"
-    fi
-}
+rows="$DIR/.rows.$$"
+: > "$rows"
+if [ -s "$DIR/repos.tsv" ]; then
+    while IFS="$(printf '\t')" read -r key path project source state orphaned; do
+        sync="" ; push="" ; err=""
+        [ -s "$DIR/$key.sync" ] && sync=$(cat "$DIR/$key.sync")
+        [ -s "$DIR/$key.push" ] && push=$(cat "$DIR/$key.push")
+        [ -s "$DIR/$key.error" ] && err=$(cat "$DIR/$key.error")
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$project" "$source" "$state" "$orphaned" "$sync" "$push" "$err"
+    done < "$DIR/repos.tsv" >> "$rows"
+fi
 
 tmp="$DIR/.status.json.$$"
-{
-    started=$(meta started); interval=$(meta sync_interval); next=$(cat "$DIR/next_sync" 2>/dev/null)
-    printf '{"generated":%s,"version":"%s","started":%s,"sync_interval":%s,"next_sync":%s,"upstream_auth":"%s","repos":[' \
-        "$(date +%s)" "$(json_str "$(meta version)")" "${started:-null}" "${interval:-null}" \
-        "${next:-null}" "$(json_str "$(meta upstream_auth)")"
-    sep=""
-    for f in "$DIR"/*.repo; do
-        [ -e "$f" ] || continue
-        name=$(basename "$f" .repo)
-        sync=$(state "$DIR/$name.sync")
-        push=$(state "$DIR/$name.push")
-        printf '%s{"name":"%s","last_sync":%s,"sync_ok":%s,"last_push":%s,"push_ok":%s}' \
-            "$sep" "$(json_str "$name")" "${sync%,*}" "${sync#*,}" "${push%,*}" "${push#*,}"
-        sep=","
-    done
-    printf ']}\n'
-} > "$tmp" && mv -f "$tmp" "$DIR/status.json"
+jq -n \
+    --rawfile meta "$DIR/meta" \
+    --rawfile rows "$rows" \
+    --rawfile skipped "$( [ -f "$DIR/skipped.tsv" ] && echo "$DIR/skipped.tsv" || echo /dev/null)" \
+    --rawfile discovery "$( [ -f "$DIR/discovery" ] && echo "$DIR/discovery" || echo /dev/null)" \
+    --arg next "$(cat "$DIR/next_sync" 2>/dev/null)" \
+    --arg now "$(date +%s)" '
+    def kv: split("\n") | map(select(length > 0) | capture("^(?<key>[^=]+)=(?<value>.*)$")) | from_entries;
+    def num: if . == null or . == "" then null else tonumber end;
+    def lines: split("\n") | map(select(length > 0) | split("\t"));
+    def at($s): ($s | split(" ")) as $p | {at: ($p[0] | num), ok: (if ($p | length) < 2 then null else $p[1] == "ok" end)};
+    ($meta | kv) as $m | ($discovery | kv) as $d |
+    {
+      generated: ($now | num),
+      version: $m.version,
+      started: ($m.started | num),
+      sync_interval: ($m.sync_interval | num),
+      next_sync: ($next | num),
+      upstream_auth: $m.upstream_auth,
+      token_scope: $m.token_scope,
+      discovery: {
+        enabled: ($d.enabled == "true"),
+        last_run: ($d.last_run | num),
+        next_run: ($d.next_run | num),
+        ok: (if $d.ok == null then null else $d.ok == "true" end),
+        error: $d.error,
+        found: ($d.found | num),
+        included: ($d.included | num)
+      },
+      repos: [ $rows | lines[] | . as $r |
+        at($r[5] // "") as $s | at($r[6] // "") as $p | {
+          name: $r[0], project: (if $r[1] == "-" then null else $r[1] end), source: $r[2],
+          state: $r[3], orphaned_since: ($r[4] | num),
+          last_sync: $s.at, sync_ok: $s.ok, last_push: $p.at, push_ok: $p.ok,
+          error: (if ($r[7] // "") == "" then null else $r[7] end)
+        } ],
+      skipped: [ $skipped | lines[] | {name: .[0], reason: .[1]} ]
+    }' > "$tmp" 2>"$DIR/.status.err" && mv -f "$tmp" "$DIR/status.json"
+rm -f "$rows" "$tmp"

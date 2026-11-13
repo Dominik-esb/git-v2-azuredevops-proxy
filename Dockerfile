@@ -3,7 +3,8 @@
 FROM alpine:3.24
 
 # upgrade: pick up security fixes released since the base image was built.
-# git-daemon provides git-http-backend; findutils provides `find -quit` for start.sh.
+# git-daemon provides git-http-backend; findutils provides `find -quit` for start.sh; jq parses
+# the Azure DevOps API and builds the status page data.
 RUN apk upgrade --no-cache \
  && apk add --no-cache \
     git \
@@ -14,7 +15,8 @@ RUN apk upgrade --no-cache \
     ca-certificates \
     curl \
     openssl \
-    findutils
+    findutils \
+    jq
 
 # Runs as an unprivileged user. Everything it writes is under /repos (the mirrors - mount a
 # volume), /etc/git-proxy (generated config, TLS cert, Entra token) and /tmp (nginx pid, temp
@@ -28,7 +30,8 @@ COPY nginx.conf.template /etc/nginx/nginx.conf.template
 COPY ui/nginx-status.conf /etc/nginx/git-proxy-status.conf
 COPY ui/nginx-status-headers.conf /etc/nginx/git-proxy-status-headers.conf
 COPY ui/index.html ui/app.js ui/style.css /usr/share/git-proxy/ui/
-COPY --chmod=755 ui/git-proxy-status /usr/local/bin/git-proxy-status
+COPY --chmod=755 ui/git-proxy-status ui/git-proxy-sync-one ui/git-proxy-sync-error ui/git-proxy-set-head /usr/local/bin/
+COPY --chmod=755 ui/post-receive /usr/local/share/git-proxy/post-receive
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 

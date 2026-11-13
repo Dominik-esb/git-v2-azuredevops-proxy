@@ -42,7 +42,10 @@ git_ -C "$WORK/seed" add README.md
 git_ -C "$WORK/seed" commit -qm "seed"
 git_ -C "$WORK/seed" push -q origin main
 chmod -R a+rwX "$WORK/upstream"
-printf 'file:///upstream/demo  unused-pat\n' > "$WORK/config/repos.conf"
+# A second repo, to check that one repo's token does not open another.
+git_ clone -q --bare "$WORK/upstream/demo" "$WORK/upstream/other"
+chmod -R a+rwX "$WORK/upstream"
+printf 'file:///upstream/demo  unused-pat\nfile:///upstream/other  unused-pat\n' > "$WORK/config/repos.conf"
 
 # ── Start the proxy ───────────────────────────────────────────────────────────
 docker run -d --name "$NAME" \
@@ -72,6 +75,9 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -u demo:wrong "http://127.0.0.1:${
 code=$(curl -s -o /dev/null -w '%{http_code}' -u "demo:${TOKEN}" "http://127.0.0.1:${PORT}/demo.git/config")
 [ "$code" = 404 ] || fail "repo internals must not be served: expected 404, got $code"
 pass "rejects missing/wrong credentials and non-git paths"
+code=$(curl -s -o /dev/null -w '%{http_code}' -u "demo:${TOKEN}" "http://127.0.0.1:${PORT}/other.git/info/refs?service=git-upload-pack")
+[ "$code" = 401 ] || fail "demo's token must not open other.git: expected 401, got $code"
+pass "a repo's token only opens that repo"
 
 # ── Clone (protocol v2) over HTTP and HTTPS ───────────────────────────────────
 GIT_TRACE_PACKET="$WORK/trace" git_ -c protocol.version=2 \
@@ -97,7 +103,7 @@ pass "push forwarded upstream"
 code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/")
 [ "$code" = 200 ] || fail "status page: expected 200, got $code"
 status=$(curl -fsS "http://127.0.0.1:${PORT}/status.json")
-printf '%s' "$status" | grep -q '"name":"demo","last_sync":[0-9]*,"sync_ok":true,"last_push":[0-9]*,"push_ok":true' \
+printf '%s' "$status" | jq -e '.repos[] | select(.name == "demo" and .sync_ok == true and .push_ok == true and .last_sync != null and .last_push != null)' >/dev/null \
     || fail "status.json does not show the sync and the forwarded push: $status"
 printf '%s' "$status" | grep -q 'unused-pat\|file://\|/upstream/' && fail "status.json leaks the upstream URL or PAT"
 pass "status page shows sync and push, without URLs or credentials"

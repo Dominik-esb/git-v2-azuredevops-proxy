@@ -20,6 +20,31 @@ helm install git-proxy oci://ghcr.io/dominik-esb/charts/git-v2-azuredevops-proxy
 
 The release notes print the in-cluster URL and how to read the generated access tokens.
 
+## Mirroring a whole organization or project
+
+```yaml
+# values.yaml - every Grafana repository of an organization, one token for all of them
+discovery:
+  enabled: true
+  url: https://dev.azure.com/myorg          # or https://dev.azure.com/myorg/myproject
+  include: ["Grafana/*", "re:^.*-dashboards$"]
+  exclude: ["*/archive-*"]
+proxyToken:
+  scope: global
+  existingSecret: grafana-git-token         # Grafana reads the same Secret
+upstream:
+  auth: entraWorkloadIdentity
+  entra:
+    clientId: 00000000-0000-0000-0000-000000000000
+    tenantId: 00000000-0000-0000-0000-000000000000
+```
+
+New repositories are mirrored on the next scan and served at `/<project>/<repo>.git`. Disabled
+repositories, forks and empty ones are skipped, and the status page lists everything that was
+skipped and why. A repository that is deleted or stops matching is served for `archiveAfter`
+(7 days), then moved to `/repos/.archive`; nothing is deleted. `proxyToken.scope` can also be
+`project` (one token per Azure DevOps project) or `repo` (the default).
+
 ## Authentication to Azure DevOps
 
 | `upstream.auth` | You provide |
@@ -125,8 +150,18 @@ use it with `networkPolicy.enabled: true`, which by default only admits Grafana 
 
 | Key | Default | Description |
 |---|---|---|
-| `repos` | `[]` | **Required.** Azure DevOps repository URLs; each is served at `/<repo>.git` |
+| `repos` | `[]` | Azure DevOps repository URLs; each is served at `/<repo>.git`. Required unless discovery is enabled |
+| `discovery.enabled` / `.url` | `false` / `""` | Mirror every matching repository of an organization or project, at `/<project>/<repo>.git` |
+| `discovery.include` / `.exclude` | `["*"]` / `[]` | Patterns for `<project>/<repo>`: globs or `re:<regex>`; exclude wins |
+| `discovery.interval` | `300` | Seconds between scans |
+| `discovery.includeForks` / `.includeEmpty` | `false` | Also mirror forks / empty repositories |
+| `archiveAfter` | `604800` | Seconds a repository that went away is still served before it moves to `/repos/.archive`; `0`: never |
+| `mirror.branches` / `.tags` | `[]` / `true` | Mirror only these branches (e.g. `["main", "release/*"]`); mirror tags |
 | `syncInterval` | `60` | Seconds between background fetches |
+| `syncParallel` | `4` | Repositories fetched at the same time |
+| `proxyToken.scope` | `repo` | `repo`, `project` or `global` |
+| `proxyToken.user` | `git` | User name for the `global` scope |
+| `proxyToken.value` / `.existingSecret` / `.existingSecretKey` | `""` / `""` / `GIT_PROXY_TOKEN` | Token for the `global` scope; generated when empty |
 | `proxyAuth` | `basic` | `basic` or `none` (see Security) |
 | `statusPage.enabled` | `true` | Read-only status page at `/` |
 | `upstream.auth` | `pat` | `pat`, `entraWorkloadIdentity` or `entraClientSecret` |

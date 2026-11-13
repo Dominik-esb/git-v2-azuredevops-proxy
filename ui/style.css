@@ -115,7 +115,22 @@ h1 { margin: 0; font-size: 22px; font-weight: 500; }
 @keyframes march { to { stroke-dashoffset: -7.1; } }
 
 /* Table */
-h2 { margin: 28px 0 8px; font-size: 15px; font-weight: 600; }
+h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin: 28px 0 8px; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tools input, .tools select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bar);
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+}
+.tools input { width: 220px; }
+.tools .count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.note .fail { color: var(--fail); }
+details { margin-top: 24px; }
+summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 8px; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); background: var(--bar); }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 8px 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--line); }
@@ -123,10 +138,12 @@ th { font-weight: 500; color: var(--muted); }
 tbody tr:last-child td { border-bottom: none; }
 td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
 td .fail { color: var(--fail); }
-td .muted { color: var(--muted); }
+td .muted, td.muted { color: var(--muted); }
+td .orphaned { color: var(--push); }
 
 footer { max-width: 1100px; margin: 0 auto; padding: 16px 16px 28px; color: var(--muted); font-size: 12px; }
 
 @media (prefers-reduced-motion: reduce) {
   .edge.live { animation: none; }
 }
+td.fail-text { color: var(--fail); }

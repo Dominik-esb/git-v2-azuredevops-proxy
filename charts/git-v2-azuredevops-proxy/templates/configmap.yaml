@@ -11,3 +11,6 @@ data:
     {{- range .Values.repos }}
     {{ . }}
     {{- end }}
+    {{- if not .Values.repos }}
+    # No static repositories - discovery only.
+    {{- end }}

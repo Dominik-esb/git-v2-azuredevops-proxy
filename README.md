@@ -22,10 +22,12 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 
 - **Protocol v2** clones and fetches, served from a local mirror
 - **Push forwarding** — pushes and branch deletions go straight to Azure DevOps
-- **Several repositories** per instance, each with its own generated access token
+- **Several repositories** per instance — listed, or **discovered** from a whole Azure DevOps organization or project with include/exclude filters, picked up automatically when created
+- **Access tokens** per repository, per project, or one for everything (from a Kubernetes Secret)
+- **Built for many repositories** — parallel syncs, branch-limited mirrors, and repositories that go away are archived after a grace period instead of deleted
 - **Azure DevOps authentication** with a PAT, or with Microsoft Entra (workload identity or client secret) — no PAT to rotate
 - **HTTP and HTTPS**, with an auto-generated self-signed certificate or your own
-- **Status page** — a read-only page at `/` with the live data flow and per-repository sync and push times
+- **Status page** — a read-only page at `/` with the live data flow, a searchable repository list, and what discovery skipped and why
 - **Helm chart** on ghcr.io — Gateway API (HTTPRoute, ListenerSet) and Ingress, Pod Security `restricted`
 - **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
 - Small Alpine-based, multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
@@ -82,18 +84,71 @@ cp repos.conf.example repos.conf   # contains PATs: keep it secret, never commit
 docker compose up -d
 ```
 
+## Discovering repositories
+
+Instead of listing repositories, point the proxy at an Azure DevOps organization or project.
+It mirrors every repository that matches the filters, picks up new ones on each scan, and serves
+them at `/<project>/<repo>.git`:
+
+```bash
+docker run -d --name git-v2-proxy -p 7080:8080 \
+  -e DISCOVERY_URL=https://dev.azure.com/<org> \
+  -e DISCOVERY_INCLUDE='Grafana/* re:^.*-dashboards$' \
+  -e DISCOVERY_EXCLUDE='*/archive-*' \
+  -e AZURE_PAT=<pat> \
+  -e GIT_PROXY_TOKEN_SCOPE=project \
+  -v git-repos:/repos \
+  dominikesb/git-v2-azuredevops-proxy:2
+```
+
+- **Filters** match `<project>/<repo>`: shell globs (`Grafana/*`), or extended regular expressions
+  prefixed with `re:`. `DISCOVERY_EXCLUDE` wins over `DISCOVERY_INCLUDE`.
+- **Skipped automatically:** disabled repositories, forks and empty repositories (the last two can
+  be switched on). The status page lists every skipped repository with the reason.
+- **Repositories that go away** — deleted in Azure DevOps, or no longer matching the filters — keep
+  being served for `ARCHIVE_AFTER` (7 days by default), then move to `/repos/.archive`. Nothing is
+  ever deleted. If the API call fails, the previous list is kept, so an outage never looks like
+  every repository was deleted.
+- Repositories listed in `repos.conf` still work alongside discovery and keep their `/<repo>.git` paths.
+
+The identity needs **Code (Read & Write)** on the projects: read to list and mirror, write to
+forward pushes.
+
+### Access tokens for many repositories
+
+`GIT_PROXY_TOKEN_SCOPE` decides which token opens which repository:
+
+| Scope | User name | One token for |
+|---|---|---|
+| `repo` (default) | the repository path, e.g. `Grafana/dashboards` | each repository |
+| `project` | the Azure DevOps project | all repositories of a project |
+| `global` | `GIT_PROXY_USER` (`git`) | every repository. Set `GIT_PROXY_TOKEN` to supply it, e.g. from a Kubernetes Secret that Grafana reads too |
+
+Generated tokens are kept in the volume and printed to the log once. A token only opens the
+repositories its scope covers.
+
+### Large repositories
+
+- `MIRROR_BRANCHES` mirrors only the listed branches (`main release/*`); `MIRROR_TAGS=false` skips tags.
+- `SYNC_PARALLEL` fetches several repositories at once.
+- A blob-less ("partial") mirror is not offered: git refuses to serve clients from one.
+
 ## Status page
 
 Open the proxy's root URL (e.g. `http://localhost:7080/`) for a read-only status page. Each
 repository is drawn as Azure DevOps → mirror → clients; an edge turns blue after a sync, orange
 after a forwarded push and red when the last one failed, labelled with how long ago it happened.
-Below that, a table lists the last sync and push of every repository. The page refreshes itself
-every few seconds.
+Below that, a searchable table lists the last sync and push of every repository, with a filter
+for failing ones and ones going away, and — with discovery — the repositories that were skipped
+and why. With more than 12 repositories the graph shows one row per project. The page refreshes
+itself every few seconds.
 
 ![Status page with the animated data flow and per-repository sync and push times](docs/images/status-page.jpg)
 
-The page and its data (`/status.json`) show repository names and timestamps only — no URLs,
-tokens or repository content — and need no login. Set `STATUS_PAGE=off` to disable both.
+![Status page with discovery: one graph row per project, one project with a failing repository](docs/images/status-page-discovery.jpg)
+
+The page and its data (`/status.json`) show repository names, timestamps and short failure
+reasons only — no URLs, tokens or repository content — and need no login. Set `STATUS_PAGE=off` to disable both.
 
 ## Configuration
 
@@ -103,7 +158,20 @@ tokens or repository content — and need no login. Set `STATUS_PAGE=off` to dis
 | `AZURE_PAT` | — | Single-repo mode: the PAT for `AZURE_DEVOPS_URL` |
 | `REPOS_CONF` | `/etc/git-proxy/repos.conf` | Path of the multi-repo config |
 | `SYNC_INTERVAL` | `60` | Seconds between background fetches from Azure DevOps |
-| `GIT_PROXY_AUTH` | `basic` | `basic`: a generated token per repository, printed to the log. `none`: no authentication on the git endpoints — anyone who can reach the proxy can then **push** to Azure DevOps as its identity, so only use it behind a NetworkPolicy (see [`k8s/components/network-policy`](k8s/components/network-policy)) |
+| `DISCOVERY_URL` | — | Mirror every repository of `https://dev.azure.com/<org>` or `https://dev.azure.com/<org>/<project>` that matches the filters |
+| `DISCOVERY_INCLUDE` | `*` | Patterns for `<project>/<repo>`, comma- or space-separated: globs, or `re:<regex>` |
+| `DISCOVERY_EXCLUDE` | — | Same syntax; wins over `DISCOVERY_INCLUDE` |
+| `DISCOVERY_INTERVAL` | `300` | Seconds between scans |
+| `DISCOVERY_INCLUDE_FORKS` | `false` | Also mirror forks |
+| `DISCOVERY_INCLUDE_EMPTY` | `false` | Also mirror empty repositories |
+| `ARCHIVE_AFTER` | `604800` | Seconds a repository that is no longer configured or discovered is still served before it moves to `/repos/.archive`. `0`: never |
+| `GIT_PROXY_TOKEN_SCOPE` | `repo` | `repo`, `project` or `global` — see [Access tokens](#access-tokens-for-many-repositories) |
+| `GIT_PROXY_USER` | `git` | User name for the `global` scope |
+| `GIT_PROXY_TOKEN` | — | Token for the `global` scope; generated when empty |
+| `MIRROR_BRANCHES` | — | Mirror only these branches, e.g. `main release/*`. Empty: every ref |
+| `MIRROR_TAGS` | `true` | Mirror tags |
+| `SYNC_PARALLEL` | `4` | Repositories fetched at the same time |
+| `GIT_PROXY_AUTH` | `basic` | `basic`: access tokens (see `GIT_PROXY_TOKEN_SCOPE`), printed to the log. `none`: no authentication on the git endpoints — anyone who can reach the proxy can then **push** to Azure DevOps as its identity, so only use it behind a NetworkPolicy (see [`k8s/components/network-policy`](k8s/components/network-policy)) |
 | `UPSTREAM_AUTH` | `auto` | `auto`: Entra when its variables are complete, otherwise PAT. Set `pat` or `entra` to choose explicitly — recommended on AKS, where the workload identity webhook injects the `AZURE_*` variables into any labelled pod |
 | `AZURE_CLIENT_ID` | — | Entra: client ID of the app registration or managed identity |
 | `AZURE_TENANT_ID` | — | Entra: tenant ID |
