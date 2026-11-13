@@ -1,13 +1,16 @@
-FROM debian:bookworm-slim
+# Debian stable. Debian 12 (bookworm) is oldstable and no longer gets fixes for most CVEs.
+FROM debian:trixie-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# upgrade: pick up security fixes released since the base image was built.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends \
     git \
     nginx \
     fcgiwrap \
     gettext-base \
     ca-certificates \
     curl \
-    wget \
     openssl \
  && rm -rf /var/lib/apt/lists/*
 
@@ -42,6 +45,6 @@ USER 10001:10001
 EXPOSE 8080 8443
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s \
-    CMD wget -q --spider "http://localhost:${HTTP_PORT}/health" || exit 1
+    CMD curl -fsS -o /dev/null "http://localhost:${HTTP_PORT}/health" || exit 1
 
 CMD ["/start.sh"]

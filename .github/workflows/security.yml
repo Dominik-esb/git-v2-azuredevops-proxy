@@ -95,7 +95,8 @@ jobs:
           context: .
           load: true
           tags: git-proxy:scan
-          cache-from: type=gha
+          # Like a release: no cache, so the apt-get upgrade layer has today's packages.
+          no-cache: true
 
       - name: Scan image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -112,6 +113,29 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      # What Artifact Hub's security report shows: every severity, including CVEs without a fix,
+      # for this build and the latest release.
+      - name: Summary (all severities, including unfixed)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest=$(curl -fsS https://hub.docker.com/v2/repositories/dominikesb/git-v2-azuredevops-proxy/tags/latest \
+            | jq -r '.name' 2>/dev/null || true)
+          {
+            echo "### Image vulnerabilities"
+            echo
+            echo "| Image | Critical | High | Medium | Low | Unknown | Total | With fix |"
+            echo "|---|---|---|---|---|---|---|---|"
+            for img in git-proxy:scan ${latest:+dominikesb/git-v2-azuredevops-proxy:latest}; do
+              trivy image --quiet --scanners vuln --format json "$img" | jq -r --arg img "$img" '
+                [.Results[]?.Vulnerabilities[]?] as $v
+                | def n(s): [$v[] | select(.Severity == s)] | length;
+                "| \($img) | \(n("CRITICAL")) | \(n("HIGH")) | \(n("MEDIUM")) | \(n("LOW")) | \(n("UNKNOWN")) | \($v | length) | \([$v[] | select(.FixedVersion)] | length) |"'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
 
   workflows:
     name: Workflow security (zizmor)
