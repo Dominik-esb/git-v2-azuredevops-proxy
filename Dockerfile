@@ -1,25 +1,26 @@
-# Debian stable. Debian 12 (bookworm) is oldstable and no longer gets fixes for most CVEs.
-FROM debian:trixie-slim
+# Alpine: small and patched quickly. The Debian images carried ~500 CVEs that Debian marks as
+# minor or won't fix; this base scans clean.
+FROM alpine:3.24
 
 # upgrade: pick up security fixes released since the base image was built.
-RUN apt-get update \
- && apt-get upgrade -y --no-install-recommends \
- && apt-get install -y --no-install-recommends \
+# git-daemon provides git-http-backend; findutils provides `find -quit` for start.sh.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache \
     git \
+    git-daemon \
     nginx \
     fcgiwrap \
-    gettext-base \
+    gettext-envsubst \
     ca-certificates \
     curl \
     openssl \
- && rm -rf /var/lib/apt/lists/*
+    findutils
 
 # Runs as an unprivileged user. Everything it writes is under /repos (the mirrors - mount a
 # volume), /etc/git-proxy (generated config, TLS cert, Entra token) and /tmp (nginx pid, temp
 # files and the fcgiwrap socket), so the root filesystem can be mounted read-only.
-RUN groupadd --system --gid 10001 git-proxy \
- && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --no-create-home \
-        --shell /usr/sbin/nologin git-proxy \
+RUN addgroup -S -g 10001 git-proxy \
+ && adduser -S -D -H -u 10001 -G git-proxy -h /nonexistent -s /sbin/nologin git-proxy \
  && mkdir -p /repos /etc/git-proxy \
  && chown 10001:10001 /repos /etc/git-proxy
 

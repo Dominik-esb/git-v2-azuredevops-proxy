@@ -95,7 +95,7 @@ jobs:
           context: .
           load: true
           tags: git-proxy:scan
-          # Like a release: no cache, so the apt-get upgrade layer has today's packages.
+          # Like a release: no cache, so the apk upgrade layer has today's packages.
           no-cache: true
 
       - name: Scan image

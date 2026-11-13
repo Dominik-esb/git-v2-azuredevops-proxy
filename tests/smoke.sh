@@ -29,7 +29,9 @@ trap cleanup EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 pass() { echo "ok - $*"; }
 
-git_() { git -c credential.helper= -c user.name=smoke -c user.email=smoke@example.com -c init.defaultBranch=main "$@"; }
+# The proxy under test listens on 127.0.0.1; never send that through a corporate HTTP proxy.
+export NO_PROXY="127.0.0.1,localhost${NO_PROXY:+,$NO_PROXY}" no_proxy="127.0.0.1,localhost${no_proxy:+,$no_proxy}"
+git_() { git -c http.proxy= -c credential.helper= -c user.name=smoke -c user.email=smoke@example.com -c init.defaultBranch=main "$@"; }
 
 # ── Fake upstream ─────────────────────────────────────────────────────────────
 mkdir -p "$WORK/upstream" "$WORK/config"
