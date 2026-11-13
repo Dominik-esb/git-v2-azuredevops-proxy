@@ -18,7 +18,7 @@ spec:
   containers:
     - name: health
       image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-      command: ["wget", "-q", "-O", "-", "http://{{ include "git-proxy.fullname" . }}:{{ .Values.service.port }}/health"]
+      command: ["curl", "-fsS", "http://{{ include "git-proxy.fullname" . }}:{{ .Values.service.port }}/health"]
       securityContext:
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: true

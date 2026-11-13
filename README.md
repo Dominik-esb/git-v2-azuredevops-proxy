@@ -28,7 +28,7 @@ git client (v2)  ──▶  git-v2-azuredevops-proxy  ──▶  Azure DevOps (v
 - **Status page** — a read-only page at `/` with the live data flow and per-repository sync and push times
 - **Helm chart** on ghcr.io — Gateway API (HTTPRoute, ListenerSet) and Ingress, Pod Security `restricted`
 - **Kubernetes manifests** — a kustomize base plus one overlay per authentication method
-- Multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
+- Small Alpine-based, multi-arch image (`linux/amd64`, `linux/arm64`) with SBOM and provenance
 
 ## How it works
 

@@ -118,7 +118,7 @@ refresh_entra_token() {
     else
         credential="client_secret=$(urlencode "$AZURE_CLIENT_SECRET")"
     fi
-    # The body holds the credential, so it goes in a private file rather than on wget's command
+    # The body holds the credential, so it goes in a private file rather than on curl's command
     # line, where any process in the container could read it from /proc/<pid>/cmdline.
     body=$(umask 077; mktemp)
     printf 'client_id=%s&scope=%s&grant_type=client_credentials&%s' \
