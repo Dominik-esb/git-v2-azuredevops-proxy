@@ -132,7 +132,9 @@ pass "push to a discovered repo forwarded upstream"
 
 # ── A repo appears; another disappears and is archived ────────────────────────
 mkrepo Alpha new-one
-chmod -R a+rwX "$WORK/upstream"
+# Only the new repo: the container (uid 10001) owns objects it pushed into the others, and on
+# Linux this user cannot chmod those.
+chmod -R a+rwX "$WORK/upstream/Alpha/new-one"
 api "$(entry Alpha dashboards)" "$(entry Alpha new-one)" "$(entry 'Beta Team' dashboards)" \
     "$(entry Beta old true)" "$(entry Beta forky false true)" "$(entry Beta empty false false 0)" \
     "$(entry Gamma secret-stuff)"
