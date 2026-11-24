@@ -144,14 +144,23 @@ jobs:
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
           printf '%s' "$GH_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
-          helm push "$FILE" "oci://ghcr.io/${owner}/charts"
+          # GHCR occasionally answers "not found" when tagging a manifest it has just accepted
+          # (v2.2.0 failed this way); a retry a few seconds later succeeds.
+          for attempt in 1 2 3 4; do
+            helm push "$FILE" "oci://ghcr.io/${owner}/charts" && exit 0
+            echo "::warning::helm push failed (attempt $attempt), retrying in $((attempt * 10))s"
+            sleep $((attempt * 10))
+          done
+          echo "::error::helm push failed 4 times"
+          exit 1
 
       - name: Attach to the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           FILE: ${{ steps.package.outputs.file }}
-        run: gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY"
+        # --clobber: a re-run of a partly finished release may find the chart already attached.
+        run: gh release upload "$TAG" "$FILE" --repo "$GITHUB_REPOSITORY" --clobber
 
       # Artifact Hub reads repository metadata (verified publisher, owners) from the
       # "artifacthub.io" tag. Skipped until charts/artifacthub-repo.yml has a repositoryID.
